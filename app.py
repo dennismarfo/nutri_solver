@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 import json
 import requests
-import data_manager # Import des fonctions de gestion de données
+import data_manager
+import pdf_generator
 
 # Constants
 URL_ANALYSE_IA = 'https://n8n.srv775529.hstgr.cloud/webhook/analyze-meal'
-URL_GENERATION_PDF = 'https://n8n.srv775529.hstgr.cloud/webhook/generation-plan'
 
 # Configuration de la page
 st.set_page_config(
@@ -15,17 +15,20 @@ st.set_page_config(
     layout="wide"
 )
 
-# Styles CSS personnalisés pour un look premium
+# Styles CSS personnalisés
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
     .stApp {
         background-color: #0e1117;
         color: #fafafa;
+        font-family: 'Inter', sans-serif;
     }
     .metric-card {
-        background-color: #262730;
+        background: linear-gradient(135deg, #1a1f2e 0%, #262730 100%);
         padding: 20px;
-        border-radius: 10px;
+        border-radius: 12px;
         border: 1px solid #41444e;
     }
     .stButton>button {
@@ -33,19 +36,30 @@ st.markdown("""
         border-radius: 20px;
         font-weight: bold;
     }
+    .equiv-table {
+        background-color: #1a1f2e;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+    }
+    .section-header {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 700;
+    }
+    div[data-testid="stExpander"] {
+        border: 1px solid #41444e;
+        border-radius: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# Chargement des données
+# Chargement des données Ciqual
 @st.cache_data
 def load_data():
     try:
-        # Load Excel file
-        # The header is on the first row (index 0)
         df = pd.read_excel("Ciqual.xlsx")
-        
-        # Rename columns to match the app's expected format
-        # We map the complex Excel headers to simple keys
         column_mapping = {
             'alim_nom_fr': 'alim_nom_fr',
             'Energie,\nRèglement\nUE N°\n1169\n2011 (kcal\n100 g)': 'Energie_kcal_100g',
@@ -53,23 +67,10 @@ def load_data():
             'Glucides\n(g\n100 g)': 'Glucides_g_100g',
             'Lipides\n(g\n100 g)': 'Lipides_g_100g'
         }
-        
-        # Check if columns exist (handling potential variations)
-        # We only keep the columns we need
-        available_cols = [c for c in column_mapping.keys() if c in df.columns]
-        if len(available_cols) < 5:
-            # Fallback or error if columns are missing/different
-            st.warning(f"Certaines colonnes attendues sont manquantes. Colonnes trouvées : {list(df.columns)}")
-        
         df = df.rename(columns=column_mapping)
-        
-        # Filter to keep only necessary columns
-        cols_to_keep = list(column_mapping.values())
-        # Ensure we only keep columns that actually exist after renaming
-        cols_to_keep = [c for c in cols_to_keep if c in df.columns]
+        cols_to_keep = [c for c in column_mapping.values() if c in df.columns]
         df = df[cols_to_keep]
-        
-        # Data cleaning function
+
         def clean_val(x):
             if pd.isna(x): return 0.0
             if isinstance(x, (int, float)): return float(x)
@@ -81,15 +82,13 @@ def load_data():
                 return float(x.replace(',', '.'))
             return 0.0
 
-        # Apply cleaning to numeric columns
         numeric_cols = ['Energie_kcal_100g', 'Proteines_Jones_g_100g', 'Glucides_g_100g', 'Lipides_g_100g']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = df[col].apply(clean_val)
-                
         return df
     except FileNotFoundError:
-        st.error("Fichier Ciqual.xlsx introuvable. Veuillez le placer dans le répertoire du projet.")
+        st.error("Fichier Ciqual.xlsx introuvable.")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"Erreur lors du chargement des données : {e}")
@@ -97,18 +96,16 @@ def load_data():
 
 df = load_data()
 
-# Initialisation du Session State
-if 'selected_foods' not in st.session_state:
-    st.session_state.selected_foods = []
-
-# --- Sidebar : Profil & Besoins ---
-st.sidebar.header("👤 Profil & Besoins")
-client_name = st.sidebar.text_input("Nom du Client", value="Client 1")
+# ============================================================
+# SIDEBAR : Profil & BMR
+# ============================================================
+st.sidebar.header("👤 Profil du Patient")
+client_name = st.sidebar.text_input("Nom du Patient", value="Patient 1")
 
 # Paramètres physiologiques
 col_g, col_a = st.sidebar.columns(2)
 gender = col_g.radio("Sexe", ["H", "F"], horizontal=True)
-age = col_a.number_input("Age", 15, 100, 30)
+age = col_a.number_input("Âge", 15, 100, 30)
 
 col_w, col_h = st.sidebar.columns(2)
 weight = col_w.number_input("Poids (kg)", 30.0, 200.0, 70.0, step=0.5)
@@ -124,458 +121,593 @@ activity_map = {
 activity_label = st.sidebar.selectbox("Activité", list(activity_map.keys()), index=2)
 activity_factor = activity_map[activity_label]
 
-# Formules BMR (Harris-Benedict)
+# --- Sélection de la formule BMR ---
 st.sidebar.markdown("---")
-st.sidebar.subheader("🧮 Calcul BMR (Harris-Benedict)")
+st.sidebar.subheader("🧮 Calcul du Métabolisme de Base")
 
-if gender == "H":
-    bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age)
-else:
-    bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age)
+bmr_formula = st.sidebar.selectbox(
+    "Formule",
+    ["Harris-Benedict", "Black et al (1996)", "Muller"],
+    index=0
+)
+
+body_fat_pct = None
+if bmr_formula == "Muller":
+    body_fat_pct = st.sidebar.number_input(
+        "Masse grasse (%)", min_value=5.0, max_value=60.0, value=25.0, step=0.5,
+        help="Nécessaire pour la formule de Muller"
+    )
+
+# Calcul du BMR selon la formule choisie
+if bmr_formula == "Harris-Benedict":
+    bmr = data_manager.calc_bmr_harris_benedict(gender, weight, height, age)
+elif bmr_formula == "Black et al (1996)":
+    bmr = data_manager.calc_bmr_black(gender, weight, height, age)
+elif bmr_formula == "Muller":
+    bmr = data_manager.calc_bmr_muller(gender, weight, age, body_fat_pct)
 
 tdee = bmr * activity_factor
 
-st.sidebar.info(f"**BMR :** {int(bmr)} kcal\n\n**TDEE :** {int(tdee)} kcal")
+st.sidebar.info(f"**Formule :** {bmr_formula}\n\n**BMR :** {int(bmr)} kcal\n\n**TDEE :** {int(tdee)} kcal")
 
+# Objectifs cibles
 st.sidebar.markdown("---")
 st.sidebar.subheader("🎯 Objectifs Cibles")
-
-# On pré-remplit avec le TDEE calculé
 target_cals = st.sidebar.number_input("Calories (kcal)", min_value=0, value=int(tdee), step=50)
-target_prot = st.sidebar.number_input("Protéines (g)", min_value=0, value=180, step=5)
-target_lip = st.sidebar.number_input("Lipides (g)", min_value=0, value=80, step=5)
-target_carb = st.sidebar.number_input("Glucides (g)", min_value=0, value=300, step=5)
 
-# --- Main Content ---
-st.title("🥗 NutriSolver : Calculateur Inversé")
+# ============================================================
+# MAIN CONTENT
+# ============================================================
+st.title("🥗 NutriSolver")
+st.caption("Générateur de Programme Alimentaire par Équivalences")
 
 # Chargement des réglages praticien
 settings = data_manager.get_settings()
+portions = settings.get("portions", data_manager.DEFAULT_SETTINGS["portions"])
 
 # Système d'Onglets
-tab_analyse, tab_config = st.tabs(["📊 Analyse de Repas", "⚙️ Configuration Praticien"])
+tab_programme, tab_ia, tab_config = st.tabs([
+    "📋 Programme Alimentaire",
+    "🤖 Assistant IA",
+    "⚙️ Configuration Praticien"
+])
 
-with tab_analyse:
-    # --- Données de Référence pour les Équivalences ---
-    # Structure : Groupe -> {keywords: [...], refs: [(Nom, Kcal/100g), ...]}
-    EQUIVALENCE_GROUPS = {
-        "Féculents": {
-            "keywords": ["riz", "pâte", "pate", "pomme de terre", "semoule", "blé", "pain", "quinoa", "lentille", "pois", "haricot rouge", "fève", "igname", "patate douce", "boulgour", "maïs", "flocon"],
-            "refs": [
-                ("Riz cuit", 130),
-                ("Pâtes cuites", 110),
-                ("Pommes de terre", 85),
-                ("Patate douce", 86),
-                ("Pain complet", 240),
-                ("Lentilles cuites", 115),
-                ("Quinoa cuit", 120),
-                ("Banane plantain", 120)
-            ]
+# ============================================================
+# TAB 1 : PROGRAMME ALIMENTAIRE
+# ============================================================
+with tab_programme:
+
+    # --- Section Objectifs ---
+    st.subheader("🎯 Objectifs du Programme")
+    
+    # Objectifs par défaut modifiables
+    if 'objectifs' not in st.session_state:
+        st.session_state.objectifs = [
+            "Rééquilibrer l'alimentation en gardant les 3 groupes alimentaires à chaque repas",
+            "Manger à bonne quantité - suivre le programme",
+            "Prendre le temps pour manger (environ 15-20 minutes)",
+            f"Boire suffisamment d'eau min {settings.get('hydratation', {}).get('objectif_litres', 1.5)}L",
+            "Prendre une collation équilibrée"
+        ]
+    
+    objectifs_text = st.text_area(
+        "Objectifs personnalisés pour le patient",
+        value="\n".join(st.session_state.objectifs),
+        height=120
+    )
+    st.session_state.objectifs = [o.strip() for o in objectifs_text.split("\n") if o.strip()]
+    
+    st.markdown("---")
+
+    # --- Section Petit-Déjeuner ---
+    st.subheader("🌅 Petit-Déjeuner")
+    
+    options_pdj = settings.get("options_pdj", data_manager.DEFAULT_SETTINGS["options_pdj"])
+    
+    st.write("**Options au choix pour varier :**")
+    
+    # Permettre de sélectionner/désélectionner les options PDJ
+    selected_pdj = []
+    for i, opt in enumerate(options_pdj):
+        label = f"Option {i+1}" + (" (plaisir)" if i == len(options_pdj)-1 else "")
+        if st.checkbox(label, value=True, key=f"pdj_{i}"):
+            selected_pdj.append(opt)
+        st.caption(f"  → {opt}")
+    
+    st.info("💡 Ces options peuvent être à emporter. Les options \"plaisir\" doivent être occasionnelles.")
+    
+    st.markdown("---")
+    
+    # --- Section Déjeuner ---
+    st.subheader("🍽️ Déjeuner")
+    st.write("**Composer l'assiette avec UN composant de chaque groupe :**")
+    
+    # Protéines
+    with st.expander("🥩 Protéines", expanded=True):
+        col_p1, col_p2 = st.columns([1, 2])
+        with col_p1:
+            portion_viande = st.number_input(
+                "Portion viande (g)", 
+                value=int(portions.get("proteines_viande", 125)), 
+                step=5, key="dej_viande"
+            )
+            portion_poisson = st.number_input(
+                "Portion poisson (g)", 
+                value=int(portions.get("proteines_poisson", 150)), 
+                step=5, key="dej_poisson"
+            )
+            portion_oeufs = st.number_input(
+                "Nombre d'œufs", 
+                value=int(portions.get("proteines_oeufs", 3)), 
+                step=1, key="dej_oeufs"
+            )
+        with col_p2:
+            st.write("**Table d'équivalences protéines**")
+            equiv_prot = data_manager.generate_equivalences("Protéines", portion_viande)
+            if equiv_prot:
+                df_equiv_p = pd.DataFrame(equiv_prot)
+                df_equiv_p.columns = ["Aliment", "Poids (g)", "Kcal"]
+                st.dataframe(df_equiv_p, use_container_width=True, hide_index=True)
+    
+    # Féculents
+    with st.expander("🍚 Féculents", expanded=True):
+        col_f1, col_f2 = st.columns([1, 2])
+        with col_f1:
+            portion_feculents = st.number_input(
+                "Portion féculents cuits (g)", 
+                value=int(portions.get("feculents_cuits", 150)), 
+                step=10, key="dej_feculents"
+            )
+        with col_f2:
+            st.write("**Table d'équivalences féculents**")
+            equiv_fec = data_manager.generate_equivalences("Féculents", portion_feculents)
+            if equiv_fec:
+                df_equiv_f = pd.DataFrame(equiv_fec)
+                df_equiv_f.columns = ["Aliment", "Poids (g)", "Kcal"]
+                st.dataframe(df_equiv_f, use_container_width=True, hide_index=True)
+    
+    # Légumes
+    with st.expander("🥦 Légumes", expanded=True):
+        col_l1, col_l2 = st.columns([1, 2])
+        with col_l1:
+            portion_legumes = st.number_input(
+                "Portion légumes cuits (g)", 
+                value=int(portions.get("legumes_cuits", 200)), 
+                step=10, key="dej_legumes"
+            )
+            portion_crudites = st.number_input(
+                "Portion crudités (g)", 
+                value=int(portions.get("legumes_crus", 150)), 
+                step=10, key="dej_crudites"
+            )
+        with col_l2:
+            st.write("**Table d'équivalences légumes**")
+            equiv_leg = data_manager.generate_equivalences("Légumes", portion_legumes)
+            if equiv_leg:
+                df_equiv_l = pd.DataFrame(equiv_leg)
+                df_equiv_l.columns = ["Aliment", "Poids (g)", "Kcal"]
+                st.dataframe(df_equiv_l, use_container_width=True, hide_index=True)
+    
+    # Matières grasses
+    with st.expander("🫒 Matières Grasses"):
+        st.write(f"**Portion recommandée :** {int(portions.get('matieres_grasses_cas', 1))} cuillère(s) à soupe (~10g)")
+        st.caption("Pour la cuisson ou l'assaisonnement. Varier vos huiles (olive, colza, coco, noix...).")
+    
+    # Dessert
+    st.write("**Dessert :** + 1 fruit 🍎")
+    
+    st.markdown("---")
+    
+    # --- Section Collation ---
+    st.subheader("☕ Collation - Après-midi")
+    
+    options_collation = settings.get("options_collation", data_manager.DEFAULT_SETTINGS["options_collation"])
+    
+    selected_collation = []
+    for i, opt in enumerate(options_collation):
+        if st.checkbox(f"Option {i+1}", value=True, key=f"col_{i}"):
+            selected_collation.append(opt)
+        st.caption(f"  → {opt}")
+    
+    st.info("☕ Accompagner votre collation d'une boisson chaude (thé, tisane sans sucre) ou d'eau.")
+    
+    st.markdown("---")
+    
+    # --- Section Dîner ---
+    st.subheader("🌙 Dîner")
+    st.write("**Même structure que le déjeuner (portions ajustables) :**")
+    
+    # Protéines Dîner
+    with st.expander("🥩 Protéines (Dîner)", expanded=True):
+        col_dp1, col_dp2 = st.columns([1, 2])
+        with col_dp1:
+            diner_portion_viande = st.number_input(
+                "Portion viande (g)", 
+                value=int(portions.get("proteines_viande", 125)), 
+                step=5, key="din_viande"
+            )
+        with col_dp2:
+            st.write("**Équivalences protéines**")
+            equiv_prot_d = data_manager.generate_equivalences("Protéines", diner_portion_viande)
+            if equiv_prot_d:
+                df_ep_d = pd.DataFrame(equiv_prot_d)
+                df_ep_d.columns = ["Aliment", "Poids (g)", "Kcal"]
+                st.dataframe(df_ep_d, use_container_width=True, hide_index=True)
+    
+    # Féculents Dîner
+    with st.expander("🍚 Féculents (Dîner)", expanded=True):
+        col_df1, col_df2 = st.columns([1, 2])
+        with col_df1:
+            diner_portion_feculents = st.number_input(
+                "Portion féculents cuits (g)", 
+                value=int(portions.get("feculents_cuits", 150)), 
+                step=10, key="din_feculents"
+            )
+        with col_df2:
+            st.write("**Équivalences féculents**")
+            equiv_fec_d = data_manager.generate_equivalences("Féculents", diner_portion_feculents)
+            if equiv_fec_d:
+                df_ef_d = pd.DataFrame(equiv_fec_d)
+                df_ef_d.columns = ["Aliment", "Poids (g)", "Kcal"]
+                st.dataframe(df_ef_d, use_container_width=True, hide_index=True)
+    
+    # Légumes Dîner
+    with st.expander("🥦 Légumes (Dîner)"):
+        st.write(f"**Portion recommandée :** {int(portions.get('legumes_cuits', 200))}g cuits ou {int(portions.get('legumes_crus', 150))}g crudités ou 250-300ml soupe")
+    
+    # Matières grasses Dîner
+    with st.expander("🫒 Matières Grasses (Dîner)"):
+        st.write(f"**Portion recommandée :** {int(portions.get('matieres_grasses_cas', 1))} càs")
+    
+    st.write("**Dessert :** + 100g fromage blanc/Skyr/yaourt grecque/2 petits-suisses")
+    
+    st.markdown("---")
+    
+    # --- Section Répartition Assiette ---
+    st.subheader("🍽️ Répartition de l'assiette")
+    col_rep1, col_rep2 = st.columns(2)
+    with col_rep1:
+        st.markdown("""
+        **Option 1 :**
+        - ½ assiette → Légumes
+        - ¼ assiette → Féculents
+        - ¼ assiette → Protéines
+        """)
+    with col_rep2:
+        st.markdown("""
+        **Option 2 :**
+        - ⅓ assiette → Légumes
+        - ⅓ assiette → Féculents
+        - ⅓ assiette → Protéines
+        """)
+    
+    st.markdown("---")
+    
+    # --- Section Hydratation ---
+    st.subheader("💧 Hydratation")
+    hydratation = settings.get("hydratation", data_manager.DEFAULT_SETTINGS["hydratation"])
+    st.write(f"**Objectif :** Boire au moins {hydratation.get('objectif_litres', 1.5)}-2L par jour")
+    st.write(f"**Répartition :** {hydratation.get('repartition', '')}")
+    st.write(f"**Café/Thé noir :** Limiter à {hydratation.get('max_cafe_the', 3)} tasses par jour. Privilégier tisanes et infusions.")
+    
+    st.markdown("---")
+    
+    # --- Section Listes de Référence ---
+    st.subheader("📖 Listes de Référence")
+    
+    with st.expander("🥜 Légumineuses"):
+        equiv_leg_sec = data_manager.generate_equivalences("Légumineuses", int(portions.get("legumineuses_cuites", 160)))
+        if equiv_leg_sec:
+            df_ls = pd.DataFrame(equiv_leg_sec)
+            df_ls.columns = ["Aliment", "Poids (g)", "Kcal"]
+            st.dataframe(df_ls, use_container_width=True, hide_index=True)
+        st.caption("Note : bien les tremper si secs (min 8h). En conserve, bien les rincer.")
+    
+    with st.expander("🌰 Oléagineux & Graines"):
+        st.markdown("""
+        **Fruits à coque (grillés, sans sel) :**
+        Amande, Noix, Noix de pécan, Noisette, Noix de macadamia, Pistache, Noix de cajou, Noix de Brésil, Châtaigne
+        
+        **Graines :**
+        Tournesol, Courge, Lin (broyé avant consommation), Chia, Chanvre
+        """)
+    
+    with st.expander("🍎 Fruits - Équivalences"):
+        st.markdown("""
+        **1 fruit ≈ 100g** = 1 pomme, 1 poire, 1 banane, 2 clémentines, 1 orange, 
+        10-15 raisins, 3 abricots, 2 kiwis, 7-8 fraises, 10-15 framboises, 
+        ¼ ananas, ½ mangue, 1 tranche pastèque, 2-3 figues, 15 cerises
+        """)
+        st.caption("Pour les fruits séchés : même quantité en frais que séché.")
+    
+    with st.expander("🥛 Produits Laitiers"):
+        equiv_lait = data_manager.generate_equivalences("Produits Laitiers", int(portions.get("fromage_blanc", 100)))
+        if equiv_lait:
+            df_lait = pd.DataFrame(equiv_lait)
+            df_lait.columns = ["Aliment", "Poids (g)", "Kcal"]
+            st.dataframe(df_lait, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # --- Section Fréquences + Conseils ---
+    st.subheader("📝 Conseils Généraux")
+    
+    # Fréquences protéines
+    with st.expander("🔄 Fréquences Protéines"):
+        freq = settings.get("frequences_proteines", data_manager.DEFAULT_SETTINGS["frequences_proteines"])
+        freq_data = [
+            {"Type": "Viandes blanches", "Fréquence": freq.get("viandes_blanches", "5 fois/semaine")},
+            {"Type": "Viandes rouges", "Fréquence": freq.get("viandes_rouges", "max 2 fois/semaine")},
+            {"Type": "Poissons", "Fréquence": freq.get("poissons", "2-3 fois/semaine")},
+            {"Type": "Œufs", "Fréquence": freq.get("oeufs", "min 3-4 fois/semaine")},
+            {"Type": "Végétarien", "Fréquence": freq.get("vegetarien", "min 3-4 fois/semaine")},
+        ]
+        st.dataframe(pd.DataFrame(freq_data), use_container_width=True, hide_index=True)
+    
+    # Conseils
+    conseils = settings.get("conseils_generaux", data_manager.DEFAULT_SETTINGS["conseils_generaux"])
+    st.text_area("Conseils à inclure dans le programme", value=conseils, height=200, key="conseils_display", disabled=True)
+    
+    st.markdown("---")
+    
+    # --- GÉNÉRATION DU PDF ---
+    st.subheader("📤 Générer le Programme Alimentaire")
+    
+    # Construction du payload
+    payload = {
+        "client_ref": client_name,
+        "bmr": round(bmr, 1),
+        "tdee": round(tdee, 1),
+        "formule_bmr": bmr_formula,
+        "objectifs": st.session_state.objectifs,
+        "petit_dejeuner": {
+            "options": selected_pdj
         },
-        "Viandes/Poissons/Oeufs": {
-            "keywords": ["poulet", "boeuf", "veau", "porc", "agneau", "dinde", "canard", "steak", "jambon", "poisson", "saumon", "thon", "colin", "cabillaud", "crevette", "oeuf", "merlu", "sardine", "maquereau"],
-            "refs": [
-                ("Poulet (blanc)", 110),
-                ("Boeuf (5% MG)", 125),
-                ("Saumon", 200),
-                ("Oeufs (2 unités)", 140),
-                ("Thon conserve", 110),
-                ("Cabillaud", 80),
-                ("Tofu", 76)
-            ]
+        "dejeuner": {
+            "proteines": {
+                "portion_viande_g": portion_viande,
+                "portion_poisson_g": portion_poisson,
+                "portion_oeufs": portion_oeufs,
+                "equivalences": data_manager.generate_equivalences("Protéines", portion_viande)
+            },
+            "feculents": {
+                "portion_g": portion_feculents,
+                "equivalences": data_manager.generate_equivalences("Féculents", portion_feculents)
+            },
+            "legumes": {
+                "portion_cuits_g": portion_legumes,
+                "portion_crudites_g": portion_crudites,
+                "equivalences": data_manager.generate_equivalences("Légumes", portion_legumes)
+            },
+            "matieres_grasses": {
+                "portion_cas": int(portions.get("matieres_grasses_cas", 1))
+            },
+            "dessert": "1 fruit"
         },
-        "Légumes": {
-            "keywords": ["tomate", "carotte", "courgette", "haricot vert", "brocoli", "chou", "épinard", "poivron", "salade", "aubergine", "concombre", "radis", "poireau", "champignon"],
-            "refs": [
-                ("Haricots verts", 30),
-                ("Carottes cuites", 35),
-                ("Brocoli", 34),
-                ("Courgettes", 17),
-                ("Salade verte", 15)
-            ]
+        "collation": {
+            "options": selected_collation
         },
-        "Fruits": {
-            "keywords": ["pomme", "banane", "orange", "poire", "fraise", "framboise", "myrtille", "kiwi", "raisin", "pêche", "abricot", "ananas", "mangue", "clémentine"],
-            "refs": [
-                ("Pomme", 52),
-                ("Banane", 89),
-                ("Orange", 47),
-                ("Kiwi", 61),
-                ("Raisins", 67)
-            ]
+        "diner": {
+            "proteines": {
+                "portion_viande_g": diner_portion_viande,
+                "equivalences": data_manager.generate_equivalences("Protéines", diner_portion_viande)
+            },
+            "feculents": {
+                "portion_g": diner_portion_feculents,
+                "equivalences": data_manager.generate_equivalences("Féculents", diner_portion_feculents)
+            },
+            "legumes": {
+                "portion_cuits_g": int(portions.get("legumes_cuits", 200)),
+                "portion_crudites_g": int(portions.get("legumes_crus", 150)),
+            },
+            "matieres_grasses": {
+                "portion_cas": int(portions.get("matieres_grasses_cas", 1))
+            },
+            "dessert": "100g fromage blanc/Skyr/yaourt grecque"
         },
-        "Matières Grasses": {
-            "keywords": ["huile", "beurre", "margarine", "avocat", "amande", "noix", "cacahuète", "cajou", "pistache", "mayonnaise", "vinaigrette"],
-            "refs": [
-                ("Huile d'olive (1 c.à.s)", 90), # ~10g
-                ("Beurre (10g)", 75),
-                ("Avocat", 160),
-                ("Amandes", 600),
-                ("Noix", 650)
-            ]
-        },
-        "Produits Laitiers": {
-            "keywords": ["lait", "yaourt", "fromage", "crème", "skyr", "faisselle", "blanc", "petit suisse"],
-            "refs": [
-                ("Lait demi-écrémé (ml)", 46),
-                ("Yaourt nature", 50),
-                ("Fromage blanc 0%", 48),
-                ("Mozzarella", 280),
-                ("Comté", 410)
-            ]
+        "hydratation": hydratation,
+        "frequences_proteines": freq,
+        "conseils_generaux": conseils,
+        "listes_reference": {
+            "legumineuses": data_manager.generate_equivalences("Légumineuses", int(portions.get("legumineuses_cuites", 160))),
+            "fruits_equivalences": "1 fruit ≈ 100g = 1 pomme, 1 poire, 1 banane, 2 clémentines, 1 orange, 10-15 raisins, etc."
         }
     }
-
-    def detect_group(food_name):
-        """Détermine le groupe d'aliment basé sur le nom."""
-        name_lower = food_name.lower()
-        for group, data in EQUIVALENCE_GROUPS.items():
-            for kw in data['keywords']:
-                if kw in name_lower:
-                    return group
-        return "Autre"
-
-    def generate_equivalence_string(group, target_kcal, current_food_name):
-        """Génère la chaîne de texte pour les équivalences."""
-        if group not in EQUIVALENCE_GROUPS or group == "Autre":
-            return ""
-        
-        refs = EQUIVALENCE_GROUPS[group]['refs']
-        equivs = []
-        
-        for ref_name, ref_kcal_100g in refs:
-            # On ne compare pas l'aliment avec lui-même (approximativement)
-            if ref_name.lower() in current_food_name.lower() or current_food_name.lower() in ref_name.lower():
-                continue
-                
-            # Règle de trois calorique
-            # Poids équivalent = (Cibles Kcal * 100) / Kcal réf
-            if ref_kcal_100g > 0:
-                weight = (target_kcal * 100) / ref_kcal_100g
-                # Arrondi joli (ex: 233 -> 230)
-                weight = round(weight / 5) * 5 
-                equivs.append(f"{int(weight)}g {ref_name}")
-        
-        if not equivs:
-            return ""
-            
-        return "Ou environ : " + " / ".join(equivs[:4]) # On limite à 4 suggestions pour la lisibilité
-
-    # 1. Search & Add
-    st.subheader("🔎 Ajouter un aliment")
     
-    # --- Integration AI ---
-    with st.expander("🤖 Assistant IA (Décrire un repas)"):
-        c_ai_1, c_ai_2 = st.columns([3, 1])
-        with c_ai_1:
-            ai_query = st.text_input("Description", placeholder="Ex: 'Un steak avec du riz'", key="ai_input")
-        with c_ai_2:
-            ai_meal_ctx = st.selectbox("Repas cible", ["Matin", "Midi", "Soir", "Collation"], key="ai_meal_ctx")
-            
-        if st.button("✨ Analyser et Ajouter", key="ai_btn"):
-            if ai_query:
-                with st.spinner("Analyse intelligente en cours..."):
-                    try:
-                        # 1. Chargement des réglages & Construction des règles
-                        settings = data_manager.get_settings()
-                        
-                        # Création de la chaîne de règles (ex: 'Féculents: 150g, Viande: 125g')
-                        rules_list = []
-                        for k, v in settings.items():
-                            # On ne garde que les portions (on exclut Eau et conseils)
-                            if k not in ["Eau", "conseils_generaux"] and isinstance(v, (int, float)):
-                                rules_list.append(f"{k}: {v}g")
-                        nutrition_rules = ", ".join(rules_list)
-                        
-                        # 2. Envoi à n8n avec le nouveau format demandé
-                        payload = {
-                            "user_query": ai_query,
-                            "meal_type": ai_meal_ctx,
-                            "nutrition_rules": nutrition_rules
-                        }
-                        
-                        # Appel Webhook
-                        response = requests.post(URL_ANALYSE_IA, json=payload)
-                        response.raise_for_status()
-                        
-                        raw_response = response.json()
-                        
-                        # 1. Extraction de la chaîne JSON depuis la réponse n8n
-                        # Format attendu : [{ "output": "{'analyse': [...] }" }]
-                        ai_output_str = "{}"
-                        if isinstance(raw_response, list) and len(raw_response) > 0:
-                            ai_output_str = raw_response[0].get("output", "{}")
-                        elif isinstance(raw_response, dict):
-                             ai_output_str = raw_response.get("output", "{}")
-                            
-                        # 2. Désérialisation avec json.loads
-                        data = json.loads(ai_output_str)
-                        
-                        items_added = []
-                        # 3. Mapping des résultats
-                        if "analyse" in data:
-                            for item in data["analyse"]:
-                                new_food = {
-                                    "meal": ai_meal_ctx,
-                                    "name": item.get("aliment_reference", "Inconnu"),
-                                    "qty": item.get("poids_g", 0),
-                                    "calories": item.get("kcal_total", 0),
-                                    "protein": item.get("prot", 0),
-                                    "lipids": item.get("lip", 0),
-                                    "carbs": item.get("gluc", 0),
-                                    "group": item.get("categorie", "Autre"),
-                                    # Calcul des valeurs pour 100g pour consistance avec le reste de l'app si nécessaire
-                                    "data_per_100g": {
-                                        "Energie_kcal_100g": (item.get("kcal_total", 0) / item.get("poids_g", 1) * 100) if item.get("poids_g", 0) > 0 else 0,
-                                        "Proteines_Jones_g_100g": (item.get("prot", 0) / item.get("poids_g", 1) * 100) if item.get("poids_g", 0) > 0 else 0
-                                    }
-                                }
-                                st.session_state.selected_foods.append(new_food)
-                                items_added.append(f"{new_food['qty']}g {new_food['name']}")
-                            
-                            if items_added:
-                                st.success(f"✅ Ajouté : {', '.join(items_added)}")
-                                st.rerun()
-                        else:
-                            st.warning(f"L'IA n'a pas pu structurer les aliments. Réponse : {data}")
-                            
-                    except requests.exceptions.RequestException as e:
-                        st.error(f"Erreur de connexion n8n : {e}")
-                    except json.JSONDecodeError as e:
-                        st.error(f"Erreur de lecture du JSON : {e}")
-                    except Exception as e:
-                        st.error(f"Une erreur inattendue est survenue : {e}")
-
-    st.markdown("---")
-    st.write("**Ou ajouter manuellement :**")
-
-    if not df.empty:
-        col_search, col_meal, col_qty, col_add = st.columns([2, 1, 1, 1])
-        
-        with col_search:
-            food_options = df['alim_nom_fr'].tolist()
-            selected_food_name = st.selectbox("Rechercher un aliment", options=[""] + food_options)
-            
-            # Feedback immédiat sur le groupe détecté
-            if selected_food_name:
-                detected_grp = detect_group(selected_food_name)
-                st.caption(f"Groupe détecté : **{detected_grp}**")
-        
-        with col_meal:
-            meal_type = st.selectbox("Repas", ["Matin", "Midi", "Soir", "Collation"])
-
-        with col_qty:
-            qty = st.number_input("Quantité (g)", min_value=0, value=100, step=10)
-            
-        with col_add:
-            st.write("") # Spacer
-            st.write("") # Spacer
-            if st.button("Ajouter", type="primary"):
-                if selected_food_name:
-                    food_data = df[df['alim_nom_fr'] == selected_food_name].iloc[0]
-                    item_group = detect_group(selected_food_name)
-                    
-                    item = {
-                        "meal": meal_type,
-                        "name": selected_food_name,
-                        "group": item_group, # Stockage du groupe
-                        "qty": qty,
-                        "protein": (food_data['Proteines_Jones_g_100g'] * qty) / 100,
-                        "lipids": (food_data['Lipides_g_100g'] * qty) / 100,
-                        "carbs": (food_data['Glucides_g_100g'] * qty) / 100,
-                        "calories": (food_data['Energie_kcal_100g'] * qty) / 100,
-                        "data_per_100g": food_data.to_dict()
-                    }
-                    st.session_state.selected_foods.append(item)
-                    st.rerun()
-
-    # 2. Liste des aliments sélectionnés
-    if st.session_state.selected_foods:
-        st.subheader("📋 Plan par Équivalences")
-        
-        for i, item in enumerate(st.session_state.selected_foods):
-            c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 3, 1, 1, 1, 1, 1])
-            c1.write(f"**{item.get('meal', 'N/A')}**")
-            
-            # Affichage enrichi avec le groupe
-            grp_display = f" ({item.get('group', '?')})" if item.get('group') != "Autre" else ""
-            c2.markdown(f"**{item['name']}**{grp_display}")
-            
-            c2.caption(f"Cible : {item['qty']}g ({int(item['calories'])} kcal)")
-            
-            c3.write(f"{item['protein']:.1f}g P")
-            c4.write(f"{item['lipids']:.1f}g L")
-            c5.write(f"{item['carbs']:.1f}g G")
-            
-            if c7.button("🗑️", key=f"del_{i}"):
-                st.session_state.selected_foods.pop(i)
-                st.rerun()
-
-    # 3. Calculs des Totaux
-    total_cals = sum(item['calories'] for item in st.session_state.selected_foods)
-    total_prot = sum(item['protein'] for item in st.session_state.selected_foods)
-    total_lip = sum(item['lipids'] for item in st.session_state.selected_foods)
-    total_carb = sum(item['carbs'] for item in st.session_state.selected_foods)
-
-    # 4. Jauges / Métriques
-    st.subheader("📊 Avancement")
-    m1, m2, m3, m4 = st.columns(4)
-
-    def get_delta_color(current, target):
-        return "normal" if current <= target else "inverse"
-
-    m1.metric("Calories", f"{total_cals:.0f} / {target_cals}", delta=f"{total_cals - target_cals:.0f}", delta_color=get_delta_color(total_cals, target_cals))
-    m2.metric("Protéines", f"{total_prot:.1f} / {target_prot}g", delta=f"{total_prot - target_prot:.1f}g", delta_color=get_delta_color(total_prot, target_prot))
-    m3.metric("Lipides", f"{total_lip:.1f} / {target_lip}g", delta=f"{total_lip - target_lip:.1f}g", delta_color=get_delta_color(total_lip, target_lip))
-    m4.metric("Glucides", f"{total_carb:.1f} / {target_carb}g", delta=f"{total_carb - target_carb:.1f}g", delta_color=get_delta_color(total_carb, target_carb))
-
-    st.progress(min(total_cals / target_cals if target_cals > 0 else 0, 1.0), text="Calories")
-    st.progress(min(total_prot / target_prot if target_prot > 0 else 0, 1.0), text="Protéines")
-
-    # 5. Solver
-    st.subheader("🧮 Solver : Combler les Protéines")
-    if not df.empty:
-        c_sol_food, c_sol_meal = st.columns([3, 1])
-        with c_sol_food:
-            solver_food = st.selectbox("Choisir un aliment combler", options=[""] + df['alim_nom_fr'].tolist(), key="solver_select")
-        with c_sol_meal:
-            solver_meal = st.selectbox("Repas cible", ["Collation", "Matin", "Midi", "Soir"], key="solver_meal")
-        
-        if st.button("Calculer et Ajouter"):
-            if solver_food:
-                remaining_prot = target_prot - total_prot
-                if remaining_prot <= 0:
-                    st.warning("Objectif de protéines déjà atteint !")
-                else:
-                    food_data = df[df['alim_nom_fr'] == solver_food].iloc[0]
-                    prot_per_100 = food_data['Proteines_Jones_g_100g']
-                    
-                    if prot_per_100 > 0:
-                        needed_qty = (remaining_prot * 100) / prot_per_100
-                        
-                        item = {
-                            "meal": solver_meal,
-                            "name": solver_food,
-                            "group": detect_group(solver_food),
-                            "qty": round(needed_qty, 1),
-                            "protein": remaining_prot,
-                            "lipids": (food_data['Lipides_g_100g'] * needed_qty) / 100,
-                            "carbs": (food_data['Glucides_g_100g'] * needed_qty) / 100,
-                            "calories": (food_data['Energie_kcal_100g'] * needed_qty) / 100,
-                            "data_per_100g": food_data.to_dict()
-                        }
-                        st.session_state.selected_foods.append(item)
-                        st.success(f"Ajouté : {needed_qty:.1f}g de {solver_food}")
-                        st.rerun()
-                    else:
-                        st.error("Pas de protéines dans cet aliment.")
-
-    # 6. Export
-    st.subheader("📤 Validation du Plan avec Équivalences")
-    if st.button("🚀 Valider et Générer le PDF"):
-        # Group foods by meal
-        meals_dict = {}
-        for item in st.session_state.selected_foods:
-            m_name = item.get('meal', 'Autre')
-            if m_name not in meals_dict:
-                meals_dict[m_name] = []
-            
-            # Generation de la chaîne d'équivalence
-            eq_text = generate_equivalence_string(item.get('group', 'Autre'), item['calories'], item['name'])
-            
-            food_entry = {
-                "nom": item['name'],
-                "poids": item['qty'],
-                "groupe": item.get('group', 'Autre'),
-                "equivalences": eq_text, # Nouvelle clé
-                "prot": round(item['protein'], 1),
-                "lip": round(item['lipids'], 1),
-                "gluc": round(item['carbs'], 1),
-                "kcal": round(item['calories'], 1)
-            }
-            meals_dict[m_name].append(food_entry)
-        
-        # Construct final list
-        repas_list = []
-        meal_order = ["Matin", "Midi", "Collation", "Soir"]
-        for m in meal_order:
-            if m in meals_dict:
-                repas_list.append({
-                    "nom": m,
-                    "aliments": meals_dict[m]
-                })
-                del meals_dict[m]
-        for m, foods in meals_dict.items():
-            repas_list.append({
-                "nom": m,
-                "aliments": foods
-            })
-
-        with st.spinner('Orchestration des équivalences...'):
+    if st.button("🚀 Générer le PDF", type="primary"):
+        with st.spinner("Génération du programme alimentaire..."):
             try:
-                # Récupération des conseils praticien
-                current_settings = data_manager.get_settings()
-                conseils = current_settings.get("conseils_generaux", "")
-                
-                payload = {
-                    "client_ref": client_name,
-                    "total_kcal": round(total_cals, 1),
-                    "bmr": round(bmr, 1),
-                    "tdee": round(tdee, 1),
-                    "conseils_generaux": conseils, # Renommé pour correspondre à la demande
-                    "repas": repas_list
-                }
-                
-                response = requests.post(
-                    URL_GENERATION_PDF, 
-                    json=payload
-                )
-                
-                if response.status_code == 200:
-                    st.success("✅ Programme par Équivalences généré avec succès !")
-                    st.balloons()
-                else:
-                    st.error(f"Erreur n8n : {response.text}")
+                pdf_bytes = bytes(pdf_generator.generate_programme_pdf(payload))
+                st.session_state.pdf_data = pdf_bytes
+                st.session_state.pdf_filename = f"Programme_Alimentaire_{client_name.replace(' ', '_')}.pdf"
+                st.success("✅ Programme Alimentaire généré avec succès !")
+                st.balloons()
             except Exception as e:
-                st.error(f"Erreur de connexion : {e}")
+                st.error(f"Erreur lors de la génération : {e}")
+    
+    # Bouton de téléchargement (persiste après génération)
+    if 'pdf_data' in st.session_state and st.session_state.pdf_data:
+        st.download_button(
+            label="📥 Télécharger le PDF",
+            data=st.session_state.pdf_data,
+            file_name=st.session_state.pdf_filename,
+            mime="application/pdf",
+            type="primary"
+        )
 
+
+# ============================================================
+# TAB 2 : ASSISTANT IA
+# ============================================================
+with tab_ia:
+    st.subheader("🤖 Assistant IA - Idées de Repas")
+    st.write("Décrivez un repas ou une idée et l'IA vous proposera une analyse nutritionnelle.")
+    
+    c_ai_1, c_ai_2 = st.columns([3, 1])
+    with c_ai_1:
+        ai_query = st.text_input("Description", placeholder="Ex: 'Un steak avec du riz et des haricots verts'", key="ai_input")
+    with c_ai_2:
+        ai_meal_ctx = st.selectbox("Repas cible", ["Matin", "Midi", "Soir", "Collation"], key="ai_meal_ctx")
+
+    if st.button("✨ Analyser", key="ai_btn"):
+        if ai_query:
+            with st.spinner("Analyse intelligente en cours..."):
+                try:
+                    current_settings = data_manager.get_settings()
+                    rules_list = []
+                    for k, v in current_settings.get("portions", {}).items():
+                        if isinstance(v, (int, float)):
+                            rules_list.append(f"{k}: {v}g")
+                    nutrition_rules = ", ".join(rules_list)
+                    
+                    payload = {
+                        "user_query": ai_query,
+                        "meal_type": ai_meal_ctx,
+                        "nutrition_rules": nutrition_rules
+                    }
+                    
+                    response = requests.post(URL_ANALYSE_IA, json=payload)
+                    response.raise_for_status()
+                    
+                    raw_response = response.json()
+                    
+                    ai_output_str = "{}"
+                    if isinstance(raw_response, list) and len(raw_response) > 0:
+                        ai_output_str = raw_response[0].get("output", "{}")
+                    elif isinstance(raw_response, dict):
+                        ai_output_str = raw_response.get("output", "{}")
+                    
+                    data = json.loads(ai_output_str)
+                    
+                    if "analyse" in data:
+                        st.success("✅ Analyse terminée :")
+                        for item in data["analyse"]:
+                            st.write(f"- **{item.get('aliment_reference', 'Inconnu')}** : "
+                                     f"{item.get('poids_g', 0)}g "
+                                     f"({item.get('kcal_total', 0)} kcal, "
+                                     f"P:{item.get('prot', 0)}g, "
+                                     f"L:{item.get('lip', 0)}g, "
+                                     f"G:{item.get('gluc', 0)}g)")
+                    else:
+                        st.warning(f"L'IA n'a pas pu structurer les aliments. Réponse : {data}")
+                        
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Erreur de connexion n8n : {e}")
+                except json.JSONDecodeError as e:
+                    st.error(f"Erreur de lecture du JSON : {e}")
+                except Exception as e:
+                    st.error(f"Erreur inattendue : {e}")
+    
+    st.markdown("---")
+    st.subheader("🔎 Recherche Ciqual")
+    st.write("Rechercher un aliment dans la base Ciqual pour voir ses valeurs nutritionnelles.")
+    
+    if not df.empty:
+        food_search = st.selectbox("Rechercher un aliment", options=[""] + df['alim_nom_fr'].tolist(), key="ciqual_search")
+        if food_search:
+            food_data = df[df['alim_nom_fr'] == food_search].iloc[0]
+            col_n1, col_n2, col_n3, col_n4 = st.columns(4)
+            col_n1.metric("Énergie", f"{food_data['Energie_kcal_100g']:.0f} kcal/100g")
+            col_n2.metric("Protéines", f"{food_data['Proteines_Jones_g_100g']:.1f} g/100g")
+            col_n3.metric("Glucides", f"{food_data['Glucides_g_100g']:.1f} g/100g")
+            col_n4.metric("Lipides", f"{food_data['Lipides_g_100g']:.1f} g/100g")
+
+
+# ============================================================
+# TAB 3 : CONFIGURATION PRATICIEN
+# ============================================================
 with tab_config:
     st.subheader("⚙️ Configuration Praticien")
-    st.info("Ici, vous pouvez définir vos portions de référence standards et vos conseils hydratation.")
+    st.info("Définissez vos portions de référence, options PDJ/collation et conseils. Ces valeurs seront utilisées pour générer les programmes alimentaires.")
     
     with st.form("settings_form"):
-        col1, col2 = st.columns(2)
+        
+        # --- Portions de référence ---
+        st.markdown("### 🥩 Portions de Référence")
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.markdown("### Portions de Référence (en g)")
-            # On charge les clés actuelles de settings mais on pourrait aussi hardcoder les champs demandés
-            new_feculents = st.number_input("Portion Féculents (g)", value=settings.get("Féculents", 150), step=10)
-            new_viande = st.number_input("Portion Viande (g)", value=settings.get("Viande", 125), step=10)
-            new_poisson = st.number_input("Portion Poisson (g)", value=settings.get("Poisson", 150), step=10)
-            
+            new_viande = st.number_input("Viande (g)", value=int(portions.get("proteines_viande", 125)), step=5)
+            new_poisson = st.number_input("Poisson (g)", value=int(portions.get("proteines_poisson", 150)), step=5)
+            new_oeufs = st.number_input("Œufs (nombre)", value=int(portions.get("proteines_oeufs", 3)), step=1)
         with col2:
-            st.markdown("### Autres")
-            new_eau = st.number_input("Objectif Eau (L)", value=float(settings.get("Eau", 1.5)), step=0.1)
+            new_feculents = st.number_input("Féculents cuits (g)", value=int(portions.get("feculents_cuits", 150)), step=10)
+            new_legumes = st.number_input("Légumes cuits (g)", value=int(portions.get("legumes_cuits", 200)), step=10)
+            new_crudites = st.number_input("Crudités (g)", value=int(portions.get("legumes_crus", 150)), step=10)
+        with col3:
+            new_mg = st.number_input("Matières grasses (càs)", value=int(portions.get("matieres_grasses_cas", 1)), step=1)
+            new_fruits = st.number_input("Fruits (g)", value=int(portions.get("fruits", 100)), step=10)
+            new_legumineuses = st.number_input("Légumineuses cuites (g)", value=int(portions.get("legumineuses_cuites", 160)), step=10)
         
-        st.markdown("### Conseils Généraux")
-        default_conseils = "Boire régulièrement. Manger lentement dans le calme."
-        new_conseils = st.text_area("Conseils à inclure dans les fiches", value=settings.get("conseils_generaux", default_conseils), height=100)
-
-        submitted = st.form_submit_button("💾 Enregistrer les réglages")
+        col4, col5 = st.columns(2)
+        with col4:
+            new_oleagineux = st.number_input("Oléagineux (g)", value=int(portions.get("oleagineux", 15)), step=5)
+        with col5:
+            new_pain = st.number_input("Pain (g)", value=int(portions.get("pain", 50)), step=5)
+        
+        # --- Hydratation ---
+        st.markdown("### 💧 Hydratation")
+        col_h1, col_h2 = st.columns(2)
+        with col_h1:
+            new_eau = st.number_input("Objectif Eau (L)", value=float(hydratation.get("objectif_litres", 1.5)), step=0.1)
+        with col_h2:
+            new_cafe = st.number_input("Max café/thé par jour", value=int(hydratation.get("max_cafe_the", 3)), step=1)
+        
+        # --- Options PDJ ---
+        st.markdown("### 🌅 Options Petit-Déjeuner")
+        st.caption("Une option par ligne. Vous pouvez modifier, ajouter ou supprimer des options.")
+        new_pdj_text = st.text_area(
+            "Options PDJ",
+            value="\n".join(options_pdj),
+            height=180
+        )
+        
+        # --- Options Collation ---
+        st.markdown("### ☕ Options Collation")
+        new_collation_text = st.text_area(
+            "Options Collation",
+            value="\n".join(options_collation),
+            height=180
+        )
+        
+        # --- Conseils ---
+        st.markdown("### 📝 Conseils Généraux")
+        new_conseils = st.text_area(
+            "Conseils à inclure dans les programmes",
+            value=conseils,
+            height=200
+        )
+        
+        submitted = st.form_submit_button("💾 Enregistrer les réglages", type="primary")
         
         if submitted:
-            # Création du dictionnaire à sauvegarder
             new_data = {
-                "Féculents": new_feculents,
-                "Viande": new_viande,
-                "Poisson": new_poisson,
-                "Eau": new_eau,
+                "portions": {
+                    "proteines_viande": new_viande,
+                    "proteines_poisson": new_poisson,
+                    "proteines_oeufs": new_oeufs,
+                    "feculents_cuits": new_feculents,
+                    "legumes_cuits": new_legumes,
+                    "legumes_crus": new_crudites,
+                    "matieres_grasses_cas": new_mg,
+                    "fruits": new_fruits,
+                    "legumineuses_cuites": new_legumineuses,
+                    "oleagineux": new_oleagineux,
+                    "pain": new_pain,
+                    "fromage_blanc": 100,
+                },
+                "options_pdj": [o.strip() for o in new_pdj_text.split("\n") if o.strip()],
+                "options_collation": [o.strip() for o in new_collation_text.split("\n") if o.strip()],
+                "hydratation": {
+                    "objectif_litres": new_eau,
+                    "max_cafe_the": new_cafe,
+                    "repartition": hydratation.get("repartition", "")
+                },
+                "frequences_proteines": settings.get("frequences_proteines", data_manager.DEFAULT_SETTINGS["frequences_proteines"]),
                 "conseils_generaux": new_conseils
             }
             
             if data_manager.save_settings(new_data):
-                st.success("Réglages enregistrés avec succès !")
-                # Optionnel : Rerun pour mettre à jour immédiatement partout si besoin
-                # st.rerun() 
+                st.success("✅ Réglages enregistrés avec succès !")
             else:
                 st.error("Erreur lors de l'enregistrement.")
