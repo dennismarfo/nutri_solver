@@ -12,45 +12,69 @@ URL_ANALYSE_IA = 'https://n8n.srv775529.hstgr.cloud/webhook/analyze-meal'
 st.set_page_config(
     page_title="NutriSolver",
     page_icon="🥗",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Styles CSS personnalisés
+# Styles CSS personnalisés (Thème Clair Tricky Nutrition)
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
 
     .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
-        font-family: 'Inter', sans-serif;
+        background-color: #FFFFFF;
+        color: #2D2D2D;
+        font-family: 'Montserrat', sans-serif;
+    }
+    h1, h2, h3 {
+        font-family: 'Playfair Display', serif;
+        color: #00A651 !important;
     }
     .metric-card {
-        background: linear-gradient(135deg, #1a1f2e 0%, #262730 100%);
+        background-color: #F8F9FA;
         padding: 20px;
         border-radius: 12px;
-        border: 1px solid #41444e;
+        border: 1px solid #E0E0E0;
     }
     .stButton>button {
         width: 100%;
-        border-radius: 20px;
-        font-weight: bold;
+        border-radius: 30px;
+        font-weight: 700;
+        font-family: 'Montserrat', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        background-color: #00A651 !important;
+        color: #FFFFFF !important;
+        border: none !important;
+        transition: background-color 0.3s ease;
+    }
+    .stButton>button:hover {
+        background-color: #2DB35D !important;
+        color: #FFFFFF !important;
     }
     .equiv-table {
-        background-color: #1a1f2e;
+        background-color: #F8F9FA;
         border-radius: 10px;
         padding: 15px;
         margin: 10px 0;
+        border: 1px solid #E0E0E0;
     }
     .section-header {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #00A651;
         font-weight: 700;
+        font-family: 'Playfair Display', serif;
     }
     div[data-testid="stExpander"] {
-        border: 1px solid #41444e;
+        border: 1px solid #E0E0E0;
         border-radius: 10px;
+        background-color: #F8F9FA;
+    }
+    div[data-testid="stSidebar"] {
+        background-color: #F8F9FA;
+        border-right: 1px solid #E0E0E0;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #00A651;
     }
     </style>
     """, unsafe_allow_html=True)

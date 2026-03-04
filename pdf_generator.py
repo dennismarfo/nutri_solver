@@ -52,7 +52,7 @@ class ProgrammePDF(FPDF):
     # --- Helpers ---
     def section_title(self, title):
         """Titre de section avec bandeau coloré."""
-        self.set_fill_color(52, 73, 94)  # Bleu foncé
+        self.set_fill_color(0, 166, 81)  # Vert Tricky Nutrition (#00A651)
         self.set_text_color(255, 255, 255)
         self.set_font(FONT_NAME, "B", 14)
         self.cell(0, 10, f"  {title}", fill=True, new_x="LMARGIN", new_y="NEXT")
@@ -62,7 +62,7 @@ class ProgrammePDF(FPDF):
     def sub_title(self, title):
         """Sous-titre."""
         self.set_font(FONT_NAME, "B", 11)
-        self.set_text_color(52, 73, 94)
+        self.set_text_color(0, 166, 81)  # Vert Tricky Nutrition
         self.cell(0, 7, title, new_x="LMARGIN", new_y="NEXT")
         self.ln(2)
         self.set_text_color(40, 40, 40)
@@ -131,7 +131,7 @@ class ProgrammePDF(FPDF):
     def info_box(self, text):
         """Encadre d'information."""
         self.set_font(FONT_NAME, "I", 9)
-        self.set_text_color(44, 62, 80)
+        self.set_text_color(232, 200, 64)  # Or Tricky Nutrition (#E8C840)
         self.multi_cell(0, 5.5, f"  >> {text}", new_x="LMARGIN", new_y="NEXT")
         self.set_text_color(40, 40, 40)
         self.ln(3)
@@ -161,7 +161,7 @@ def generate_programme_pdf(data):
 
     # Titre principal
     pdf.set_font(FONT_NAME, "B", 24)
-    pdf.set_text_color(52, 73, 94)
+    pdf.set_text_color(0, 166, 81)  # Vert Tricky Nutrition
     pdf.cell(0, 15, "PROGRAMME ALIMENTAIRE", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 

@@ -1,7 +1,44 @@
 {
-    "Féculents": 160,
-    "Viande": 125,
-    "Poisson": 150,
-    "Eau": 1.5,
-    "conseils_generaux": "Boire régulièrement. Manger lentement dans le calme."
+    "portions": {
+        "proteines_viande": 130,
+        "proteines_poisson": 150,
+        "proteines_oeufs": 3,
+        "feculents_cuits": 150,
+        "legumes_cuits": 200,
+        "legumes_crus": 150,
+        "matieres_grasses_cas": 1,
+        "fruits": 100,
+        "legumineuses_cuites": 160,
+        "oleagineux": 15,
+        "pain": 50,
+        "fromage_blanc": 100
+    },
+    "options_pdj": [
+        "100g fromage blanc/Skyr + 30-40g flocons d'avoine + 1 càs graines + 1 càs oléagineux + 1 fruit",
+        "100g fromage blanc/Skyr + 50g granola + 1 fruit",
+        "50g pain complet + 20g beurre de cacahuètes ou fromage frais + 1 fruit",
+        "50g pain complet + 1 œuf (au plat, brouillé…) ou saumon/truite fumé + ½ avocat + 1 fruit",
+        "1 viennoiserie ou brioche + 1 yaourt nature ou 100g fromage blanc + 2 càs mélange de graines (plaisir)"
+    ],
+    "options_collation": [
+        "1 fruit ou 100g compote + 1 poignée oléagineux (15g)",
+        "1 fruit ou 100g compote + 125g yaourt nature/100g fromage blanc",
+        "1 barre de céréales (aux noix)",
+        "1 tranche pain (30g) + 1 càs fromage frais ou beurre de cacahuètes + 1 fruit",
+        "100g fromage blanc + 2 càs muesli/granola aux noix",
+        "2 biscuits secs ou 1 madeleine + 1 poignée graines ou 100g fromage blanc (1-2 fois max)"
+    ],
+    "hydratation": {
+        "objectif_litres": 1.5,
+        "max_cafe_the": 3,
+        "repartition": "1 au réveil, 1 au PDJ, 2 dans la matinée, 1 à midi, 2 dans l'après-midi, 1 au dîner"
+    },
+    "frequences_proteines": {
+        "viandes_blanches": "5 fois/semaine",
+        "viandes_rouges": "max 2 fois/semaine",
+        "poissons": "2-3 fois/semaine dont poissons gras 2 fois",
+        "oeufs": "min 3-4 fois/semaine",
+        "vegetarien": "min 3-4 fois/semaine"
+    },
+    "conseils_generaux": "Boire régulièrement."
 }
