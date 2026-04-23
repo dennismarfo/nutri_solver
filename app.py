@@ -1,12 +1,17 @@
 import streamlit as st
 import pandas as pd
 import json
+import os
 import requests
 import data_manager
 import pdf_generator
 
 # Constants
 URL_ANALYSE_IA = 'https://n8n.srv775529.hstgr.cloud/webhook/analyze-meal'
+
+# Feature flag : onglet Assistant IA (n8n) masqué tant que l'endpoint n'est pas
+# public/validé. Activer en posant NUTRISOLVER_SHOW_AI=1 dans l'env.
+SHOW_AI_TAB = os.getenv("NUTRISOLVER_SHOW_AI") == "1"
 
 # Configuration de la page
 st.set_page_config(
@@ -190,11 +195,18 @@ settings = data_manager.get_settings()
 portions = settings.get("portions", data_manager.DEFAULT_SETTINGS["portions"])
 
 # Système d'Onglets
-tab_programme, tab_ia, tab_config = st.tabs([
-    "📋 Programme Alimentaire",
-    "🤖 Assistant IA",
-    "⚙️ Configuration Praticien"
-])
+if SHOW_AI_TAB:
+    tab_programme, tab_ia, tab_config = st.tabs([
+        "📋 Programme Alimentaire",
+        "🤖 Assistant IA",
+        "⚙️ Configuration Praticien"
+    ])
+else:
+    tab_programme, tab_config = st.tabs([
+        "📋 Programme Alimentaire",
+        "⚙️ Configuration Praticien"
+    ])
+    tab_ia = None
 
 # ============================================================
 # TAB 1 : PROGRAMME ALIMENTAIRE
@@ -745,7 +757,8 @@ with tab_programme:
 # ============================================================
 # TAB 2 : ASSISTANT IA
 # ============================================================
-with tab_ia:
+if tab_ia is not None:
+  with tab_ia:
     st.subheader("🤖 Assistant IA - Idées de Repas")
     st.write("Décrivez un repas ou une idée et l'IA vous proposera une analyse nutritionnelle.")
     
