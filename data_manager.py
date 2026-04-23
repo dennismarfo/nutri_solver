@@ -14,7 +14,7 @@ DEFAULT_SETTINGS = {
         "feculents_cuits": 150,
         "legumes_cuits": 200,
         "legumes_crus": 150,
-        "matieres_grasses_cas": 1,  # cuillères à soupe
+        "matieres_grasses_g": 10,   # 1½ càs d'huile (référence Tracy)
         "fruits": 100,              # grammes (~1 fruit)
         "legumineuses_cuites": 160,
         "oleagineux": 15,           # grammes (1 poignée)
@@ -131,14 +131,15 @@ EQUIVALENCES = {
         ]
     },
     "Matières Grasses": {
-        "ref_aliment": "Huile d'olive (1 càs ~10g)",
+        "ref_aliment": "Huile (olive, colza, tournesol, noix, coco, avocat, noisette)",
+        "ref_portion_g": 10,
         "ref_kcal_100g": 900,
+        "use_explicit_weights": True,
         "alternatives": [
-            {"nom": "Beurre (10g)", "kcal_100g": 750},
-            {"nom": "Huile de coco (1 càs)", "kcal_100g": 862},
-            {"nom": "Avocat (½)", "kcal_100g": 160},
-            {"nom": "Mayonnaise (1 càs)", "kcal_100g": 680},
-            {"nom": "Crème 15% (1 càs)", "kcal_100g": 155},
+            {"nom": "Beurre ou margarine", "poids_g": 12, "kcal_100g": 750},
+            {"nom": "Crème 15% (1½ càs)", "poids_g": 22, "kcal_100g": 155},
+            {"nom": "Mayonnaise", "poids_g": 14, "kcal_100g": 680},
+            {"nom": "Avocat (⅓)", "poids_g": 50, "kcal_100g": 160},
         ]
     },
     "Fruits": {
@@ -265,30 +266,42 @@ def generate_equivalences(groupe, portion_g):
     """
     if groupe not in EQUIVALENCES:
         return []
-    
+
     group_data = EQUIVALENCES[groupe]
     ref_kcal_100g = group_data["ref_kcal_100g"]
-    
-    # Calories de la portion de référence
     portion_kcal = (ref_kcal_100g * portion_g) / 100
-    
+
     results = [{
         "nom": f"{group_data['ref_aliment']} (réf.)",
-        "poids_g": round(portion_g),
+        "poids_g": round(portion_g, 1),
         "kcal": round(portion_kcal)
     }]
-    
-    for alt in group_data["alternatives"]:
-        if alt["kcal_100g"] > 0:
-            poids_equiv = (portion_kcal * 100) / alt["kcal_100g"]
-            # Arrondi à 5g
-            poids_equiv = round(poids_equiv / 5) * 5
+
+    if group_data.get("use_explicit_weights"):
+        # Règles cliniques fournies par la praticienne : on n'applique PAS
+        # la proportionnalité kcal (sinon 58g de crème 15% au lieu de 22g).
+        # On scale uniquement si la portion de réf est modifiée.
+        ref_portion_g = group_data.get("ref_portion_g") or portion_g
+        scale = portion_g / ref_portion_g if ref_portion_g else 1.0
+        for alt in group_data["alternatives"]:
+            poids = alt["poids_g"] * scale
+            kcal = round((alt["kcal_100g"] * poids) / 100) if alt.get("kcal_100g") else 0
             results.append({
                 "nom": alt["nom"],
-                "poids_g": poids_equiv,
-                "kcal": round((alt["kcal_100g"] * poids_equiv) / 100)
+                "poids_g": round(poids, 1),
+                "kcal": kcal
             })
-    
+    else:
+        for alt in group_data["alternatives"]:
+            if alt["kcal_100g"] > 0:
+                poids_equiv = (portion_kcal * 100) / alt["kcal_100g"]
+                poids_equiv = round(poids_equiv / 5) * 5
+                results.append({
+                    "nom": alt["nom"],
+                    "poids_g": poids_equiv,
+                    "kcal": round((alt["kcal_100g"] * poids_equiv) / 100)
+                })
+
     return results
 
 

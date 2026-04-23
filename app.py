@@ -313,8 +313,22 @@ with tab_programme:
                 st.dataframe(df_equiv_l, use_container_width=True, hide_index=True)
     
     # Matières grasses
-    with st.expander("🫒 Matières Grasses"):
-        st.write(f"**Portion recommandée :** {int(portions.get('matieres_grasses_cas', 1))} cuillère(s) à soupe (~10g)")
+    with st.expander("🫒 Matières Grasses", expanded=True):
+        col_mg1, col_mg2 = st.columns([1, 2])
+        with col_mg1:
+            portion_mg = st.number_input(
+                "Portion huile (g)",
+                value=int(portions.get("matieres_grasses_g", 10)),
+                step=1, key="dej_mg",
+                help="Référence : 10 g = 1½ càs d'huile"
+            )
+        with col_mg2:
+            st.write("**Table d'équivalences matières grasses**")
+            equiv_mg = data_manager.generate_equivalences("Matières Grasses", portion_mg)
+            if equiv_mg:
+                df_equiv_mg = pd.DataFrame(equiv_mg)
+                df_equiv_mg.columns = ["Aliment", "Poids (g)", "Kcal"]
+                st.dataframe(df_equiv_mg, use_container_width=True, hide_index=True)
         st.caption("Pour la cuisson ou l'assaisonnement. Varier vos huiles (olive, colza, coco, noix...).")
     
     # Dessert
@@ -380,8 +394,22 @@ with tab_programme:
         st.write(f"**Portion recommandée :** {int(portions.get('legumes_cuits', 200))}g cuits ou {int(portions.get('legumes_crus', 150))}g crudités ou 250-300ml soupe")
     
     # Matières grasses Dîner
-    with st.expander("🫒 Matières Grasses (Dîner)"):
-        st.write(f"**Portion recommandée :** {int(portions.get('matieres_grasses_cas', 1))} càs")
+    with st.expander("🫒 Matières Grasses (Dîner)", expanded=True):
+        col_dmg1, col_dmg2 = st.columns([1, 2])
+        with col_dmg1:
+            diner_portion_mg = st.number_input(
+                "Portion huile (g)",
+                value=int(portions.get("matieres_grasses_g", 10)),
+                step=1, key="din_mg",
+                help="Référence : 10 g = 1½ càs d'huile"
+            )
+        with col_dmg2:
+            st.write("**Équivalences matières grasses**")
+            equiv_mg_d = data_manager.generate_equivalences("Matières Grasses", diner_portion_mg)
+            if equiv_mg_d:
+                df_emg_d = pd.DataFrame(equiv_mg_d)
+                df_emg_d.columns = ["Aliment", "Poids (g)", "Kcal"]
+                st.dataframe(df_emg_d, use_container_width=True, hide_index=True)
     
     st.write("**Dessert :** + 100g fromage blanc/Skyr/yaourt grecque/2 petits-suisses")
     
@@ -504,7 +532,8 @@ with tab_programme:
                 "equivalences": data_manager.generate_equivalences("Légumes", portion_legumes)
             },
             "matieres_grasses": {
-                "portion_cas": int(portions.get("matieres_grasses_cas", 1))
+                "portion_g": portion_mg,
+                "equivalences": data_manager.generate_equivalences("Matières Grasses", portion_mg)
             },
             "dessert": "1 fruit"
         },
@@ -525,7 +554,8 @@ with tab_programme:
                 "portion_crudites_g": int(portions.get("legumes_crus", 150)),
             },
             "matieres_grasses": {
-                "portion_cas": int(portions.get("matieres_grasses_cas", 1))
+                "portion_g": diner_portion_mg,
+                "equivalences": data_manager.generate_equivalences("Matières Grasses", diner_portion_mg)
             },
             "dessert": "100g fromage blanc/Skyr/yaourt grecque"
         },
@@ -659,7 +689,7 @@ with tab_config:
             new_legumes = st.number_input("Légumes cuits (g)", value=int(portions.get("legumes_cuits", 200)), step=10)
             new_crudites = st.number_input("Crudités (g)", value=int(portions.get("legumes_crus", 150)), step=10)
         with col3:
-            new_mg = st.number_input("Matières grasses (càs)", value=int(portions.get("matieres_grasses_cas", 1)), step=1)
+            new_mg_g = st.number_input("Matières grasses (g huile réf.)", value=int(portions.get("matieres_grasses_g", 10)), step=1)
             new_fruits = st.number_input("Fruits (g)", value=int(portions.get("fruits", 100)), step=10)
             new_legumineuses = st.number_input("Légumineuses cuites (g)", value=int(portions.get("legumineuses_cuites", 160)), step=10)
         
@@ -713,7 +743,7 @@ with tab_config:
                     "feculents_cuits": new_feculents,
                     "legumes_cuits": new_legumes,
                     "legumes_crus": new_crudites,
-                    "matieres_grasses_cas": new_mg,
+                    "matieres_grasses_g": new_mg_g,
                     "fruits": new_fruits,
                     "legumineuses_cuites": new_legumineuses,
                     "oleagineux": new_oleagineux,

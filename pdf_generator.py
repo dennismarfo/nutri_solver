@@ -238,8 +238,16 @@ def generate_programme_pdf(data):
 
     # Matières grasses
     mg_data = dejeuner.get("matieres_grasses", {})
-    pdf.sub_title("Matieres Grasses")
-    pdf.body_text(f"{mg_data.get('portion_cas', 1)} cuillere(s) a soupe (8-10g) d'huile pour la cuisson ou l'assaisonnement. Varier vos huiles (olive, colza, coco, noix, noisette...).")
+    equiv_mg = mg_data.get("equivalences", [])
+    if equiv_mg:
+        pdf.equivalence_table(
+            f"Matieres Grasses - portion : {mg_data.get('portion_g', 10)}g huile",
+            equiv_mg
+        )
+    else:
+        pdf.sub_title("Matieres Grasses")
+        pdf.body_text(f"{mg_data.get('portion_g', 10)}g d'huile pour la cuisson ou l'assaisonnement.")
+    pdf.body_text("Varier vos huiles (olive, colza, coco, noix, noisette...).")
 
     # Dessert
     pdf.sub_title("Dessert")
@@ -294,8 +302,15 @@ def generate_programme_pdf(data):
     pdf.sub_title(f"Legumes - {d_leg.get('portion_cuits_g', 200)}g cuits / {d_leg.get('portion_crudites_g', 150)}g crudites / 250-300ml soupe")
 
     d_mg = diner.get("matieres_grasses", {})
-    pdf.sub_title("Matieres Grasses")
-    pdf.body_text(f"{d_mg.get('portion_cas', 1)} cuillere(s) a soupe pour la cuisson ou l'assaisonnement.")
+    d_equiv_mg = d_mg.get("equivalences", [])
+    if d_equiv_mg:
+        pdf.equivalence_table(
+            f"Matieres Grasses - portion : {d_mg.get('portion_g', 10)}g huile",
+            d_equiv_mg
+        )
+    else:
+        pdf.sub_title("Matieres Grasses")
+        pdf.body_text(f"{d_mg.get('portion_g', 10)}g d'huile pour la cuisson ou l'assaisonnement.")
 
     pdf.sub_title("Dessert")
     dessert_din = diner.get("dessert", "100g fromage blanc/Skyr/yaourt grecque")

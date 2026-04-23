@@ -6,7 +6,7 @@
         "feculents_cuits": 150,
         "legumes_cuits": 200,
         "legumes_crus": 150,
-        "matieres_grasses_cas": 1,
+        "matieres_grasses_g": 10,
         "fruits": 100,
         "legumineuses_cuites": 160,
         "oleagineux": 15,
@@ -40,5 +40,5 @@
         "oeufs": "min 3-4 fois/semaine",
         "vegetarien": "min 3-4 fois/semaine"
     },
-    "conseils_generaux": "Boire régulièrement."
+    "conseils_generaux": "Boire régulièrement. S'étirer"
 }
