@@ -95,6 +95,9 @@ EQUIVALENCES = {
         "ref_aliment": "Poulet (blanc)",
         "ref_kcal_100g": 110,
         "ref_macros_100g": {"prot": 23.0, "carb": 0.0, "lip": 2.0},
+        # Table legacy (iso-kcal à partir du poulet) — conservée pour la
+        # compatibilité ascendante de generate_equivalences("Protéines", ...).
+        # La nouvelle UI utilise PROTEINES_BY_CATEGORY ci-dessous.
         "alternatives": [
             {"nom": "Dinde", "kcal_100g": 104},
             {"nom": "Bœuf (5% MG)", "kcal_100g": 137},
@@ -362,6 +365,81 @@ def compute_macros_targets(weight_kg, target_cals, ratios):
         },
         "warnings": warnings,
     }
+
+
+# Catégories protéines — Tracy prescrit UNE portion par catégorie
+# (125 g viande OU 150 g poisson OU 3 œufs OU 125 g végétal) puis le
+# patient choisit un aliment dans la catégorie.
+PROTEINES_BY_CATEGORY = [
+    {
+        "categorie": "Viandes",
+        "portion_source": "viande",
+        "aliments": [
+            {"nom": "Poulet (blanc)", "kcal_100g": 110},
+            {"nom": "Dinde", "kcal_100g": 104},
+            {"nom": "Bœuf (5% MG)", "kcal_100g": 137},
+            {"nom": "Veau", "kcal_100g": 143},
+        ],
+    },
+    {
+        "categorie": "Poissons & fruits de mer",
+        "portion_source": "poisson",
+        "aliments": [
+            {"nom": "Cabillaud / Colin", "kcal_100g": 80},
+            {"nom": "Saumon", "kcal_100g": 208},
+            {"nom": "Maquereau", "kcal_100g": 205},
+            {"nom": "Thon (conserve nature)", "kcal_100g": 116},
+            {"nom": "Crevettes", "kcal_100g": 99},
+        ],
+    },
+    {
+        "categorie": "Œufs",
+        "portion_source": "oeufs",
+        "aliments": [
+            # 1 œuf ≈ 60 g, 84 kcal
+            {"nom": "Œufs (unité ~60 g)", "kcal_unit": 84, "g_unit": 60},
+        ],
+    },
+    {
+        "categorie": "Végétarien",
+        "portion_source": "viande",
+        "aliments": [
+            {"nom": "Tofu", "kcal_100g": 76},
+            {"nom": "Tempeh", "kcal_100g": 192},
+        ],
+    },
+]
+
+
+def generate_protein_equivalences(portion_viande_g, portion_poisson_g, portion_oeufs_n):
+    """
+    Retourne la liste groupée des protéines, par catégorie, avec la portion
+    prescrite par Tracy pour chaque catégorie (viande / poisson / œuf / végé)
+    et les kcal réels (non iso-kcal).
+    """
+    portions_by_source = {
+        "viande": portion_viande_g,
+        "poisson": portion_poisson_g,
+        "oeufs": portion_oeufs_n,
+    }
+    out = []
+    for cat in PROTEINES_BY_CATEGORY:
+        portion = portions_by_source.get(cat["portion_source"], 0) or 0
+        for aliment in cat["aliments"]:
+            if "kcal_unit" in aliment:
+                # cas des œufs : portion exprimée en unités
+                kcal = aliment["kcal_unit"] * portion
+                poids_affiche = f"{portion} unité(s) (~{aliment.get('g_unit', 60) * portion} g)"
+            else:
+                kcal = round(aliment["kcal_100g"] * portion / 100)
+                poids_affiche = f"{portion} g"
+            out.append({
+                "categorie": cat["categorie"],
+                "nom": aliment["nom"],
+                "poids": poids_affiche,
+                "kcal": round(kcal),
+            })
+    return out
 
 
 def _macros_for(groupe, portion_g):

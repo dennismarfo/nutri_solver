@@ -128,6 +128,37 @@ class ProgrammePDF(FPDF):
 
         self.ln(4)
 
+    def protein_equivalence_table(self, title, items):
+        """Tableau protéines avec colonne Catégorie (4 colonnes)."""
+        if not items:
+            return
+        if title:
+            self.sub_title(title)
+
+        col_w = [45, 65, 40, 30]
+        self.set_font(FONT_NAME, "B", 9)
+        self.set_fill_color(236, 240, 241)
+        self.set_text_color(40, 40, 40)
+        self.cell(col_w[0], 7, "  Categorie", border=1, fill=True)
+        self.cell(col_w[1], 7, "  Aliment", border=1, fill=True)
+        self.cell(col_w[2], 7, "  Poids", border=1, fill=True)
+        self.cell(col_w[3], 7, "  Kcal", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+
+        self.set_font(FONT_NAME, "", 9)
+        current_cat = None
+        for j, row in enumerate(items):
+            fill = j % 2 == 0
+            if fill:
+                self.set_fill_color(249, 249, 249)
+            cat = row.get("categorie", "")
+            cat_label = cat if cat != current_cat else ""
+            current_cat = cat
+            self.cell(col_w[0], 6, f"  {cat_label}", border=1, fill=fill)
+            self.cell(col_w[1], 6, f"  {row.get('nom', '')}", border=1, fill=fill)
+            self.cell(col_w[2], 6, f"  {row.get('poids', '')}", border=1, fill=fill)
+            self.cell(col_w[3], 6, f"  {row.get('kcal', 0)}", border=1, fill=fill, new_x="LMARGIN", new_y="NEXT")
+        self.ln(4)
+
     def macros_table(self, macros, poids_kg=None):
         """Tableau objectifs macro-nutriments (grammes + % kcal + kcal)."""
         if not macros:
@@ -253,10 +284,10 @@ def generate_programme_pdf(data):
     # Protéines
     dejeuner = data.get("dejeuner", {})
     prot_data = dejeuner.get("proteines", {})
-    equiv_prot = prot_data.get("equivalences", [])
-    pdf.equivalence_table(
-        f"Proteines - portion de reference : {prot_data.get('portion_viande_g', 125)}g viande / {prot_data.get('portion_poisson_g', 150)}g poisson / {prot_data.get('portion_oeufs', 3)} oeufs",
-        equiv_prot
+    prot_cat = prot_data.get("equivalences_par_categorie", [])
+    pdf.protein_equivalence_table(
+        f"Proteines - {prot_data.get('portion_viande_g', 125)}g viande OU {prot_data.get('portion_poisson_g', 150)}g poisson OU {prot_data.get('portion_oeufs', 3)} oeufs",
+        prot_cat,
     )
 
     # Féculents
@@ -325,10 +356,10 @@ def generate_programme_pdf(data):
 
     diner = data.get("diner", {})
     d_prot = diner.get("proteines", {})
-    d_equiv_prot = d_prot.get("equivalences", [])
-    pdf.equivalence_table(
-        f"Proteines - portion : {d_prot.get('portion_viande_g', 125)}g",
-        d_equiv_prot
+    d_prot_cat = d_prot.get("equivalences_par_categorie", [])
+    pdf.protein_equivalence_table(
+        f"Proteines - {d_prot.get('portion_viande_g', 125)}g viande OU {d_prot.get('portion_poisson_g', 150)}g poisson OU {d_prot.get('portion_oeufs', 3)} oeufs",
+        d_prot_cat,
     )
 
     d_fec = diner.get("feculents", {})

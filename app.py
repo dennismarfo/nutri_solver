@@ -324,10 +324,13 @@ with tab_programme:
             )
         with col_p2:
             st.write("**Table d'équivalences protéines**")
-            equiv_prot = data_manager.generate_equivalences("Protéines", portion_viande)
+            st.caption("Par catégorie : UNE portion par catégorie, puis choix libre de l'aliment.")
+            equiv_prot = data_manager.generate_protein_equivalences(
+                portion_viande, portion_poisson, portion_oeufs
+            )
             if equiv_prot:
                 df_equiv_p = pd.DataFrame(equiv_prot)
-                df_equiv_p.columns = ["Aliment", "Poids (g)", "Kcal"]
+                df_equiv_p.columns = ["Catégorie", "Aliment", "Poids", "Kcal"]
                 st.dataframe(df_equiv_p, use_container_width=True, hide_index=True)
     
     # Féculents
@@ -417,16 +420,29 @@ with tab_programme:
         col_dp1, col_dp2 = st.columns([1, 2])
         with col_dp1:
             diner_portion_viande = st.number_input(
-                "Portion viande (g)", 
-                value=int(portions.get("proteines_viande", 125)), 
+                "Portion viande (g)",
+                value=int(portions.get("proteines_viande", 125)),
                 step=5, key="din_viande"
+            )
+            diner_portion_poisson = st.number_input(
+                "Portion poisson (g)",
+                value=int(portions.get("proteines_poisson", 150)),
+                step=5, key="din_poisson"
+            )
+            diner_portion_oeufs = st.number_input(
+                "Nombre d'œufs",
+                value=int(portions.get("proteines_oeufs", 3)),
+                step=1, key="din_oeufs"
             )
         with col_dp2:
             st.write("**Équivalences protéines**")
-            equiv_prot_d = data_manager.generate_equivalences("Protéines", diner_portion_viande)
+            st.caption("Par catégorie : UNE portion par catégorie, puis choix libre de l'aliment.")
+            equiv_prot_d = data_manager.generate_protein_equivalences(
+                diner_portion_viande, diner_portion_poisson, diner_portion_oeufs
+            )
             if equiv_prot_d:
                 df_ep_d = pd.DataFrame(equiv_prot_d)
-                df_ep_d.columns = ["Aliment", "Poids (g)", "Kcal"]
+                df_ep_d.columns = ["Catégorie", "Aliment", "Poids", "Kcal"]
                 st.dataframe(df_ep_d, use_container_width=True, hide_index=True)
     
     # Féculents Dîner
@@ -607,17 +623,6 @@ with tab_programme:
             f"{abs(reste_kcal):.0f} kcal. Réduire certaines portions."
         )
 
-    # Alertes par macro si écart > 20 % sur déj+dîner seuls (qui font ~60 % d'une journée)
-    structured_target_pct = 0.60
-    for label, key in [("Protéines", "prot"), ("Glucides", "carb"), ("Lipides", "lip")]:
-        expected = cibles[key] * structured_target_pct
-        if cibles[key] > 0 and abs(fourni[key] - expected) / cibles[key] > 0.20:
-            sense = "déficit" if fourni[key] < expected else "excès"
-            st.warning(
-                f"⚠️ {label} déj+dîner : {sense} notable vs. ~{expected:.1f} g attendus "
-                f"(~60 % de la cible journalière). Fourni : {fourni[key]:.1f} g."
-            )
-
     st.markdown("---")
 
     # --- Section Fréquences + Conseils ---
@@ -661,7 +666,9 @@ with tab_programme:
                 "portion_viande_g": portion_viande,
                 "portion_poisson_g": portion_poisson,
                 "portion_oeufs": portion_oeufs,
-                "equivalences": data_manager.generate_equivalences("Protéines", portion_viande)
+                "equivalences_par_categorie": data_manager.generate_protein_equivalences(
+                    portion_viande, portion_poisson, portion_oeufs
+                ),
             },
             "feculents": {
                 "portion_g": portion_feculents,
@@ -684,7 +691,11 @@ with tab_programme:
         "diner": {
             "proteines": {
                 "portion_viande_g": diner_portion_viande,
-                "equivalences": data_manager.generate_equivalences("Protéines", diner_portion_viande)
+                "portion_poisson_g": diner_portion_poisson,
+                "portion_oeufs": diner_portion_oeufs,
+                "equivalences_par_categorie": data_manager.generate_protein_equivalences(
+                    diner_portion_viande, diner_portion_poisson, diner_portion_oeufs
+                ),
             },
             "feculents": {
                 "portion_g": diner_portion_feculents,
