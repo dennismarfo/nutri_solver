@@ -128,6 +128,41 @@ class ProgrammePDF(FPDF):
 
         self.ln(4)
 
+    def macros_table(self, macros, poids_kg=None):
+        """Tableau objectifs macro-nutriments (grammes + % kcal + kcal)."""
+        if not macros:
+            return
+
+        ratios = macros.get("ratios", {})
+        subtitle = "OBJECTIFS MACRO-NUTRIMENTS"
+        if poids_kg and ratios.get("proteines_g_par_kg"):
+            subtitle += (
+                f" ({poids_kg:.0f} kg x {ratios.get('proteines_g_par_kg', 1.3):.2f} g/kg prot, "
+                f"{int(ratios.get('lipides_pct', 30))}% lip)"
+            )
+        self.sub_title(subtitle)
+
+        col_w = [55, 40, 40, 35]
+        self.set_font(FONT_NAME, "B", 9)
+        self.set_fill_color(236, 240, 241)
+        self.set_text_color(40, 40, 40)
+        self.cell(col_w[0], 7, "  Macro", border=1, fill=True)
+        self.cell(col_w[1], 7, "  Grammes", border=1, fill=True)
+        self.cell(col_w[2], 7, "  % kcal", border=1, fill=True)
+        self.cell(col_w[3], 7, "  Kcal", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+
+        self.set_font(FONT_NAME, "", 9)
+        for j, (label, key) in enumerate([("Proteines", "proteines"), ("Lipides", "lipides"), ("Glucides", "glucides")]):
+            row = macros.get(key, {})
+            fill = j % 2 == 0
+            if fill:
+                self.set_fill_color(249, 249, 249)
+            self.cell(col_w[0], 6, f"  {label}", border=1, fill=fill)
+            self.cell(col_w[1], 6, f"  {row.get('g', 0):.1f} g", border=1, fill=fill)
+            self.cell(col_w[2], 6, f"  {row.get('pct', 0):.1f} %", border=1, fill=fill)
+            self.cell(col_w[3], 6, f"  {row.get('kcal', 0)}", border=1, fill=fill, new_x="LMARGIN", new_y="NEXT")
+        self.ln(4)
+
     def info_box(self, text):
         """Encadre d'information."""
         self.set_font(FONT_NAME, "I", 9)
@@ -191,6 +226,11 @@ def generate_programme_pdf(data):
     pdf.section_title("OBJECTIFS")
     objectifs = data.get("objectifs", [])
     pdf.bullet_list([f"- {o}" for o in objectifs])
+
+    # Répartition macro-nutriments
+    macros = data.get("macros")
+    if macros:
+        pdf.macros_table(macros, poids_kg=data.get("poids_kg"))
 
     # Petit-Déjeuner
     pdf.section_title("PETIT-DEJEUNER")

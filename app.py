@@ -220,7 +220,64 @@ with tab_programme:
         height=120
     )
     st.session_state.objectifs = [o.strip() for o in objectifs_text.split("\n") if o.strip()]
-    
+
+    st.markdown("---")
+
+    # --- Section Répartition Macro-Nutriments ---
+    st.subheader("🎯 Répartition Macro-Nutriments")
+    st.caption(
+        "Cibles cliniques Tracy (perte de poids) : protéines 1,2-1,5 g/kg · "
+        "lipides ≤ 33-34 % · glucides ≥ 40 %."
+    )
+
+    default_macros = settings.get("macros_cibles", data_manager.DEFAULT_SETTINGS["macros_cibles"])
+
+    col_m1, col_m2, col_m3 = st.columns(3)
+    with col_m1:
+        patient_prot_ratio = st.number_input(
+            "Protéines (g/kg)",
+            min_value=0.6, max_value=2.5,
+            value=float(default_macros.get("proteines_g_par_kg", 1.3)),
+            step=0.1, key="patient_prot_ratio"
+        )
+    with col_m2:
+        patient_lip_pct = st.number_input(
+            "Lipides (% kcal)",
+            min_value=15, max_value=50,
+            value=int(default_macros.get("lipides_pct", 30)),
+            step=1, key="patient_lip_pct"
+        )
+    with col_m3:
+        patient_glu_min = st.number_input(
+            "Glucides min (% kcal)",
+            min_value=20, max_value=70,
+            value=int(default_macros.get("glucides_pct_min", 40)),
+            step=1, key="patient_glu_min"
+        )
+
+    patient_ratios = {
+        "proteines_g_par_kg": patient_prot_ratio,
+        "lipides_pct": patient_lip_pct,
+        "glucides_pct_min": patient_glu_min,
+    }
+    macros = data_manager.compute_macros_targets(weight, target_cals, patient_ratios)
+
+    df_macros = pd.DataFrame([
+        {"Macro": "Protéines", "Grammes": f"{macros['proteines']['g']:.1f} g",
+         "% kcal": f"{macros['proteines']['pct']:.1f} %", "Kcal": macros['proteines']['kcal']},
+        {"Macro": "Lipides", "Grammes": f"{macros['lipides']['g']:.1f} g",
+         "% kcal": f"{macros['lipides']['pct']:.1f} %", "Kcal": macros['lipides']['kcal']},
+        {"Macro": "Glucides", "Grammes": f"{macros['glucides']['g']:.1f} g",
+         "% kcal": f"{macros['glucides']['pct']:.1f} %", "Kcal": macros['glucides']['kcal']},
+    ])
+    st.dataframe(df_macros, use_container_width=True, hide_index=True)
+
+    if macros["warnings"]:
+        for w in macros["warnings"]:
+            st.warning(f"⚠️ {w}")
+    else:
+        st.success("✅ Répartition cohérente avec les cibles cliniques.")
+
     st.markdown("---")
 
     # --- Section Petit-Déjeuner ---
@@ -512,6 +569,8 @@ with tab_programme:
         "tdee": round(tdee, 1),
         "formule_bmr": bmr_formula,
         "objectifs": st.session_state.objectifs,
+        "macros": macros,
+        "poids_kg": weight,
         "petit_dejeuner": {
             "options": selected_pdj
         },
@@ -699,6 +758,30 @@ with tab_config:
         with col5:
             new_pain = st.number_input("Pain (g)", value=int(portions.get("pain", 50)), step=5)
         
+        # --- Cibles macros par défaut ---
+        st.markdown("### 🎯 Cibles Macro-Nutriments (défauts praticien)")
+        st.caption(
+            "Valeurs appliquées par défaut à chaque nouveau patient. "
+            "Modifiables par patient dans l'onglet Programme."
+        )
+        macros_cfg = settings.get("macros_cibles", data_manager.DEFAULT_SETTINGS["macros_cibles"])
+        col_mc1, col_mc2, col_mc3 = st.columns(3)
+        with col_mc1:
+            new_prot_ratio = st.number_input(
+                "Protéines (g/kg)", min_value=0.6, max_value=2.5,
+                value=float(macros_cfg.get("proteines_g_par_kg", 1.3)), step=0.1
+            )
+        with col_mc2:
+            new_lip_pct = st.number_input(
+                "Lipides (% kcal)", min_value=15, max_value=50,
+                value=int(macros_cfg.get("lipides_pct", 30)), step=1
+            )
+        with col_mc3:
+            new_glu_min = st.number_input(
+                "Glucides min (% kcal)", min_value=20, max_value=70,
+                value=int(macros_cfg.get("glucides_pct_min", 40)), step=1
+            )
+
         # --- Hydratation ---
         st.markdown("### 💧 Hydratation")
         col_h1, col_h2 = st.columns(2)
@@ -758,6 +841,11 @@ with tab_config:
                     "repartition": hydratation.get("repartition", "")
                 },
                 "frequences_proteines": settings.get("frequences_proteines", data_manager.DEFAULT_SETTINGS["frequences_proteines"]),
+                "macros_cibles": {
+                    "proteines_g_par_kg": new_prot_ratio,
+                    "lipides_pct": new_lip_pct,
+                    "glucides_pct_min": new_glu_min,
+                },
                 "conseils_generaux": new_conseils
             }
             

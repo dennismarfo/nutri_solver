@@ -45,6 +45,12 @@ DEFAULT_SETTINGS = {
         "max_cafe_the": 3,
         "repartition": "1 au réveil, 1 au PDJ, 2 dans la matinée, 1 à midi, 2 dans l'après-midi, 1 au dîner"
     },
+    # Cibles macro-nutriments (règles cliniques Tracy pour perte de poids)
+    "macros_cibles": {
+        "proteines_g_par_kg": 1.3,   # plage Tracy : 1,2 - 1,5 g/kg
+        "lipides_pct": 30,           # plafond Tracy : 33-34 %
+        "glucides_pct_min": 40,      # plancher Tracy
+    },
     # Fréquences protéines
     "frequences_proteines": {
         "viandes_blanches": "5 fois/semaine",
@@ -303,6 +309,53 @@ def generate_equivalences(groupe, portion_g):
                 })
 
     return results
+
+
+def compute_macros_targets(weight_kg, target_cals, ratios):
+    """
+    Calcule la répartition macros en g et % pour un objectif calorique.
+
+    Règle Tracy :
+      - Protéines : ratio g/kg de poids (cible 1,2-1,5 pour perte de poids)
+      - Lipides : pourcentage cible des kcal (plafond 33-34 %)
+      - Glucides : complément (plancher 40 %)
+    """
+    prot_g_per_kg = float(ratios.get("proteines_g_par_kg", 1.3))
+    lip_pct = float(ratios.get("lipides_pct", 30))
+    glu_min_pct = float(ratios.get("glucides_pct_min", 40))
+
+    prot_g = weight_kg * prot_g_per_kg
+    prot_kcal = prot_g * 4
+    prot_pct = (prot_kcal / target_cals * 100) if target_cals else 0.0
+
+    lip_kcal = target_cals * lip_pct / 100
+    lip_g = lip_kcal / 9
+
+    glu_pct = 100 - prot_pct - lip_pct
+    glu_kcal = target_cals * glu_pct / 100
+    glu_g = glu_kcal / 4
+
+    warnings = []
+    if prot_g_per_kg < 1.2:
+        warnings.append(f"Protéines à {prot_g_per_kg:.2f} g/kg — sous la plage cible (1,2-1,5)")
+    if prot_g_per_kg > 1.5:
+        warnings.append(f"Protéines à {prot_g_per_kg:.2f} g/kg — au-dessus de la plage cible (1,2-1,5)")
+    if lip_pct > 34:
+        warnings.append(f"Lipides à {lip_pct:.0f} % — au-dessus du plafond (33-34 %)")
+    if glu_pct < glu_min_pct:
+        warnings.append(f"Glucides à {glu_pct:.1f} % — sous le minimum requis ({glu_min_pct:.0f} %)")
+
+    return {
+        "proteines": {"g": round(prot_g, 1), "kcal": round(prot_kcal), "pct": round(prot_pct, 1)},
+        "lipides":   {"g": round(lip_g, 1),  "kcal": round(lip_kcal),  "pct": round(lip_pct, 1)},
+        "glucides":  {"g": round(glu_g, 1),  "kcal": round(glu_kcal),  "pct": round(glu_pct, 1)},
+        "ratios": {
+            "proteines_g_par_kg": prot_g_per_kg,
+            "lipides_pct": lip_pct,
+            "glucides_pct_min": glu_min_pct,
+        },
+        "warnings": warnings,
+    }
 
 
 # --- Fonctions de calcul BMR ---
