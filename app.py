@@ -537,7 +537,89 @@ with tab_programme:
             st.dataframe(df_lait, use_container_width=True, hide_index=True)
     
     st.markdown("---")
-    
+
+    # --- Section Vérification cohérence macros ---
+    st.subheader("✅ Cohérence du programme")
+    st.caption(
+        "Compare les macros fournies par les portions saisies au déjeuner + dîner "
+        "avec les cibles journalières. PDJ et collation doivent combler le reste."
+    )
+
+    dej_payload_tmp = {
+        "proteines": {"portion_viande_g": portion_viande},
+        "feculents": {"portion_g": portion_feculents},
+        "legumes":   {"portion_cuits_g": portion_legumes},
+        "matieres_grasses": {"portion_g": portion_mg},
+    }
+    din_payload_tmp = {
+        "proteines": {"portion_viande_g": diner_portion_viande},
+        "feculents": {"portion_g": diner_portion_feculents},
+        "legumes":   {"portion_cuits_g": int(portions.get("legumes_cuits", 200))},
+        "matieres_grasses": {"portion_g": diner_portion_mg},
+    }
+    fourni = data_manager.estimate_programme_macros(
+        dej_payload_tmp, din_payload_tmp,
+        portion_fruit_g=int(portions.get("fruits", 100)),
+        portion_laitier_g=int(portions.get("fromage_blanc", 100)),
+    )
+
+    cibles = {
+        "prot": macros["proteines"]["g"],
+        "carb": macros["glucides"]["g"],
+        "lip":  macros["lipides"]["g"],
+        "kcal": macros["proteines"]["kcal"] + macros["glucides"]["kcal"] + macros["lipides"]["kcal"],
+    }
+
+    def _delta_fmt(fourni_val, cible_val):
+        delta = fourni_val - cible_val
+        pct = (fourni_val / cible_val * 100) if cible_val else 0
+        return f"{delta:+.1f} ({pct:.0f} % de la cible)"
+
+    df_coh = pd.DataFrame([
+        {"Macro": "Protéines", "Cible jour (g)": f"{cibles['prot']:.1f}",
+         "Fourni déj+dîner (g)": f"{fourni['prot']:.1f}",
+         "Écart": _delta_fmt(fourni['prot'], cibles['prot'])},
+        {"Macro": "Glucides", "Cible jour (g)": f"{cibles['carb']:.1f}",
+         "Fourni déj+dîner (g)": f"{fourni['carb']:.1f}",
+         "Écart": _delta_fmt(fourni['carb'], cibles['carb'])},
+        {"Macro": "Lipides", "Cible jour (g)": f"{cibles['lip']:.1f}",
+         "Fourni déj+dîner (g)": f"{fourni['lip']:.1f}",
+         "Écart": _delta_fmt(fourni['lip'], cibles['lip'])},
+        {"Macro": "Kcal", "Cible jour (g)": f"{cibles['kcal']:.0f}",
+         "Fourni déj+dîner (g)": f"{fourni['kcal']:.0f}",
+         "Écart": _delta_fmt(fourni['kcal'], cibles['kcal'])},
+    ])
+    st.dataframe(df_coh, use_container_width=True, hide_index=True)
+
+    # Reste à combler par PDJ + collation
+    reste_kcal = cibles["kcal"] - fourni["kcal"]
+    if reste_kcal > 0:
+        st.info(
+            f"ℹ️ Reste à combler par petit-déjeuner + collation : "
+            f"~{reste_kcal:.0f} kcal  ·  "
+            f"prot {cibles['prot']-fourni['prot']:+.1f} g · "
+            f"gluc {cibles['carb']-fourni['carb']:+.1f} g · "
+            f"lip {cibles['lip']-fourni['lip']:+.1f} g"
+        )
+    else:
+        st.warning(
+            f"⚠️ Le déjeuner + dîner dépassent déjà la cible journalière de "
+            f"{abs(reste_kcal):.0f} kcal. Réduire certaines portions."
+        )
+
+    # Alertes par macro si écart > 20 % sur déj+dîner seuls (qui font ~60 % d'une journée)
+    structured_target_pct = 0.60
+    for label, key in [("Protéines", "prot"), ("Glucides", "carb"), ("Lipides", "lip")]:
+        expected = cibles[key] * structured_target_pct
+        if cibles[key] > 0 and abs(fourni[key] - expected) / cibles[key] > 0.20:
+            sense = "déficit" if fourni[key] < expected else "excès"
+            st.warning(
+                f"⚠️ {label} déj+dîner : {sense} notable vs. ~{expected:.1f} g attendus "
+                f"(~60 % de la cible journalière). Fourni : {fourni[key]:.1f} g."
+            )
+
+    st.markdown("---")
+
     # --- Section Fréquences + Conseils ---
     st.subheader("📝 Conseils Généraux")
     

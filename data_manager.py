@@ -76,6 +76,7 @@ EQUIVALENCES = {
     "Féculents": {
         "ref_aliment": "Riz cuit",
         "ref_kcal_100g": 130,
+        "ref_macros_100g": {"prot": 2.7, "carb": 28.0, "lip": 0.3},
         "alternatives": [
             {"nom": "Pâtes cuites", "kcal_100g": 131},
             {"nom": "Semoule/Couscous cuit", "kcal_100g": 112},
@@ -93,6 +94,7 @@ EQUIVALENCES = {
     "Protéines": {
         "ref_aliment": "Poulet (blanc)",
         "ref_kcal_100g": 110,
+        "ref_macros_100g": {"prot": 23.0, "carb": 0.0, "lip": 2.0},
         "alternatives": [
             {"nom": "Dinde", "kcal_100g": 104},
             {"nom": "Bœuf (5% MG)", "kcal_100g": 137},
@@ -110,6 +112,7 @@ EQUIVALENCES = {
     "Légumes": {
         "ref_aliment": "Haricots verts cuits",
         "ref_kcal_100g": 30,
+        "ref_macros_100g": {"prot": 1.8, "carb": 5.0, "lip": 0.2},
         "alternatives": [
             {"nom": "Brocoli cuit", "kcal_100g": 34},
             {"nom": "Carottes cuites", "kcal_100g": 27},
@@ -140,6 +143,7 @@ EQUIVALENCES = {
         "ref_aliment": "Huile (olive, colza, tournesol, noix, coco, avocat, noisette)",
         "ref_portion_g": 10,
         "ref_kcal_100g": 900,
+        "ref_macros_100g": {"prot": 0.0, "carb": 0.0, "lip": 100.0},
         "use_explicit_weights": True,
         "alternatives": [
             {"nom": "Beurre ou margarine", "poids_g": 12, "kcal_100g": 750},
@@ -151,6 +155,7 @@ EQUIVALENCES = {
     "Fruits": {
         "ref_aliment": "Pomme (~150g)",
         "ref_kcal_100g": 52,
+        "ref_macros_100g": {"prot": 0.3, "carb": 12.0, "lip": 0.2},
         "alternatives": [
             {"nom": "Banane (~120g)", "kcal_100g": 89},
             {"nom": "Orange (~200g)", "kcal_100g": 47},
@@ -166,6 +171,7 @@ EQUIVALENCES = {
     "Produits Laitiers": {
         "ref_aliment": "Fromage blanc 0%",
         "ref_kcal_100g": 48,
+        "ref_macros_100g": {"prot": 7.5, "carb": 4.0, "lip": 0.0},
         "alternatives": [
             {"nom": "Yaourt nature", "kcal_100g": 50},
             {"nom": "Skyr", "kcal_100g": 63},
@@ -356,6 +362,53 @@ def compute_macros_targets(weight_kg, target_cals, ratios):
         },
         "warnings": warnings,
     }
+
+
+def _macros_for(groupe, portion_g):
+    """Retourne {prot, carb, lip, kcal} pour une portion de l'aliment de référence d'un groupe."""
+    if groupe not in EQUIVALENCES:
+        return {"prot": 0.0, "carb": 0.0, "lip": 0.0, "kcal": 0.0}
+    g = EQUIVALENCES[groupe]
+    ref = g.get("ref_macros_100g", {"prot": 0.0, "carb": 0.0, "lip": 0.0})
+    factor = portion_g / 100.0
+    return {
+        "prot": ref.get("prot", 0.0) * factor,
+        "carb": ref.get("carb", 0.0) * factor,
+        "lip":  ref.get("lip", 0.0) * factor,
+        "kcal": g.get("ref_kcal_100g", 0.0) * factor,
+    }
+
+
+def estimate_programme_macros(dejeuner, diner, portion_fruit_g=100, portion_laitier_g=100):
+    """
+    Estime les macros journalières fournies par la structure déj + dîner :
+    prot / féculents / légumes / matières grasses + dessert fruit (déj) +
+    dessert laitier (dîner). PDJ, collation, pain et intercalaires ne sont
+    pas comptés (options pré-validées côté Tracy).
+    """
+    totals = {"prot": 0.0, "carb": 0.0, "lip": 0.0, "kcal": 0.0}
+    group_map = {"proteines": "Protéines", "feculents": "Féculents",
+                 "legumes": "Légumes", "matieres_grasses": "Matières Grasses"}
+
+    def _add(meal, group, portion_key):
+        portion = meal.get(group, {}).get(portion_key, 0) or 0
+        m = _macros_for(group_map[group], portion)
+        for k in totals:
+            totals[k] += m[k]
+
+    for meal in (dejeuner or {}, diner or {}):
+        _add(meal, "proteines", "portion_viande_g")
+        _add(meal, "feculents", "portion_g")
+        _add(meal, "legumes", "portion_cuits_g")
+        _add(meal, "matieres_grasses", "portion_g")
+
+    # Desserts standard : fruit au déjeuner, laitier au dîner
+    dessert_fruit = _macros_for("Fruits", portion_fruit_g)
+    dessert_laitier = _macros_for("Produits Laitiers", portion_laitier_g)
+    for k in totals:
+        totals[k] += dessert_fruit[k] + dessert_laitier[k]
+
+    return {k: round(v, 1) for k, v in totals.items()}
 
 
 # --- Fonctions de calcul BMR ---
