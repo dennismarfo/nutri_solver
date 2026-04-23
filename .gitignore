@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+
+# Notes de travail / artefacts de session
+transcript*.txt
+Capture d*.png
+Capture d*.jpg
+*.screenshot.png
